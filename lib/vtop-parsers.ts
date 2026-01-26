@@ -50,79 +50,95 @@ export function cleanText(text: string): string {
 }
 
 export function parseSemesterDropdown(html: string): Semester[] {
+  const $ = cheerio.load(html);
   const semesters: Semester[] = [];
 
-  const selectMatch = html.match(/<select[^>]*id="semesterSubId"[^>]*>([\s\S]*?)<\/select>/i);
-  const selectHtml = selectMatch ? selectMatch[1] : html;
+  // Find the semester dropdown
+  const select = $('select#semesterSubId, select[name="semesterSubId"]').first();
+  const options = select.length ? select.find('option') : $('option');
 
-  const optionRegex = /<option[^>]*value="([^"]*)"[^>]*>([^<]+)<\/option>/gi;
-  let match;
+  options.each((_, option) => {
+    const $option = $(option);
+    const id = $option.attr('value')?.trim() || '';
+    const name = $option.text().trim();
+    const isSelected = $option.is('[selected]');
 
-  while ((match = optionRegex.exec(selectHtml)) !== null) {
-    const [fullMatch, id, name] = match;
-    if (id && id.trim() !== '' && !name.toLowerCase().includes('choose') && !name.toLowerCase().includes('select')) {
+    // Skip empty values and placeholder options
+    if (id && !name.toLowerCase().includes('choose') && !name.toLowerCase().includes('select')) {
       semesters.push({
-        id: id.trim(),
-        name: name.trim(),
-        isCurrent: fullMatch.includes('selected'),
+        id,
+        name,
+        isCurrent: isSelected,
       });
     }
-  }
+  });
 
   return semesters;
 }
 
 export function parseAttendanceHTML(html: string, semesterId: string): AttendanceData {
+  html = normalizeHtml(html);
+  const $ = cheerio.load(html);
   const entries: AttendanceEntry[] = [];
 
-  const semesterNameMatch = html.match(/Winter Semester \d{4}-\d{2}|Fall Semester \d{4}-\d{2}/i);
-  const semesterName = semesterNameMatch ? semesterNameMatch[0] : '';
-
-  html = normalizeHtml(html);
-
-  const tbodyMatch = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
-  if (!tbodyMatch) {
-    return { semesterId, semesterName, entries, lastUpdated: new Date().toISOString() };
+  // Extract semester name from selected dropdown or page text
+  const selectedOption = $('select#semesterSubId option[selected]').last();
+  let semesterName = selectedOption.text().trim();
+  if (!semesterName) {
+    const semesterMatch = html.match(/(?:Winter|Fall|Summer)\s+Semester\s+\d{4}-\d{2}/i);
+    semesterName = semesterMatch ? semesterMatch[0] : '';
   }
 
-  const rowsHtml = tbodyMatch[1].split('</tr>').filter(r => r.includes('<tr>'));
+  // Find the attendance table
+  const table = $('table tbody').first();
 
-  for (const rowHtml of rowsHtml) {
-    const row = rowHtml + '</tr>';
-
-    // Extract class type from onclick - most reliable source
-    const onclickMatch = row.match(/callStudentAttendanceDetailDisplay\([^)]*,\s*(?:'|&#39;)([A-Z]+)(?:'|&#39;)\s*\)/);
-    const classType = (onclickMatch ? onclickMatch[1] : 'TH') as 'ETH' | 'ELA' | 'EPJ' | 'SS' | 'TH';
-
-    const cellMatches = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)];
-    const cells = cellMatches.map(m => cleanText(m[1]));
+  table.find('tr').each((_, row) => {
+    const $row = $(row);
+    const cells = $row.find('td');
 
     // VTOP table: [slNo, classGroup, courseDetail, classDetail, facultyDetail, attended, total, percentage, debarStatus, link]
-    if (cells.length < 10) continue;
+    if (cells.length < 10) return;
 
-    const courseDetailParts = cells[2].split(' - ').map(s => s.trim());
-    if (courseDetailParts.length < 2) continue;
+    // Extract class type from onclick attribute - most reliable source
+    const onclick = $row.find('[onclick]').attr('onclick') || '';
+    const onclickMatch = onclick.match(/callStudentAttendanceDetailDisplay\([^)]*,\s*['"]([A-Z]+)['"]\s*\)/);
+    const classType = (onclickMatch ? onclickMatch[1] : 'TH') as 'ETH' | 'ELA' | 'EPJ' | 'SS' | 'TH';
+
+    // Extract course details from cell 2 (0-indexed)
+    const courseDetail = $(cells[2]).text().trim();
+    const courseDetailParts = courseDetail.split(' - ').map(s => s.trim());
+    if (courseDetailParts.length < 2) return;
 
     const courseCode = courseDetailParts[0];
     const courseName = courseDetailParts.length > 2
       ? courseDetailParts.slice(1, -1).join(' - ')
       : courseDetailParts[1];
 
-    const classDetailParts = cells[3].split(' - ').map(s => s.trim());
+    // Extract slot from cell 3
+    const classDetail = $(cells[3]).text().trim();
+    const classDetailParts = classDetail.split(' - ').map(s => s.trim());
     const slot = classDetailParts.length >= 2 ? classDetailParts[1] : '';
 
-    const facultyParts = cells[4].split(' - ').map(s => s.trim());
+    // Extract faculty from cell 4
+    const facultyDetail = $(cells[4]).text().trim();
+    const facultyParts = facultyDetail.split(' - ').map(s => s.trim());
     const faculty = facultyParts[0];
 
-    const attendedMatch = cells[5].match(/(\d+)/);
-    const totalMatch = cells[6].match(/(\d+)/);
+    // Extract attendance numbers
+    const attendedText = $(cells[5]).text().trim();
+    const totalText = $(cells[6]).text().trim();
+    const percentageText = $(cells[7]).text().trim();
+
+    const attendedMatch = attendedText.match(/(\d+)/);
+    const totalMatch = totalText.match(/(\d+)/);
     const attended = attendedMatch ? parseInt(attendedMatch[1]) : 0;
     const total = totalMatch ? parseInt(totalMatch[1]) : 0;
 
-    const percentageMatch = cells[7].match(/(\d+)%/);
+    const percentageMatch = percentageText.match(/(\d+)/);
     const percentage = percentageMatch ? parseInt(percentageMatch[1]) : 0;
 
-    const debarCell = cells[8].toLowerCase();
+    // Check debarred status from cell 8
+    const debarCell = $(cells[8]).text().trim().toLowerCase();
     const isDebarred = debarCell.includes('debarred') && !debarCell.includes('permitted');
 
     entries.push({
@@ -136,7 +152,7 @@ export function parseAttendanceHTML(html: string, semesterId: string): Attendanc
       attendancePercentage: percentage,
       isDebarred,
     });
-  }
+  });
 
   return { semesterId, semesterName, entries, lastUpdated: new Date().toISOString() };
 }
@@ -266,104 +282,212 @@ export function parseTimetableHTML(html: string, semesterId: string): TimetableD
 }
 
 export function parseCurriculumHTML(html: string): CurriculumData {
+  const $ = cheerio.load(html);
   const categories: CurriculumData['categories'] = [];
   let totalRequiredCredits = 0;
   let totalEarnedCredits = 0;
 
-  html = normalizeHtml(html);
-
+  // Category name mappings
   const categoryNames: Record<string, string> = {
+    'NC': 'Non-Credit Course',
+    'UCC': 'University Core Courses',
+    'PCC': 'Programme Core Courses',
+    'CON': 'Concentration',
+    'OEC': 'Open Elective Courses',
+    'PMT': 'Program Minor Track',
+    'UE': 'University Elective',
     'PC': 'Program Core',
-    'PCC': 'Program Core',
     'PE': 'Program Elective',
     'UC': 'University Core',
-    'UCC': 'University Core',
-    'UE': 'University Elective',
-    'NC': 'Non-Credit',
-    'CON': 'Concentration',
-    'OEC': 'Open Elective',
-    'PMT': 'Project/Thesis',
   };
 
-  const tableMatches = html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi);
+  // Extract total credits from "Total Credits: X" text
+  const totalCreditsMatch = $.text().match(/Total\s*Credits[:\s]*(\d+)/i);
+  if (totalCreditsMatch) {
+    totalRequiredCredits = parseInt(totalCreditsMatch[1]) || 0;
+  }
 
-  for (const tableMatch of tableMatches) {
-    const tableHtml = tableMatch[1];
+  // Parse category cards - look for symbol-label divs with category info
+  $('[id^="symbol-"]').each((_, element) => {
+    const $el = $(element);
+    const categoryId = $el.attr('id')?.replace('symbol-', '') || '';
 
-    if (!tableHtml.includes('Credit') && !tableHtml.includes('L-T-P')) continue;
+    if (!categoryId) return;
 
-    const categoryMatch = tableHtml.match(/<th[^>]*colspan[^>]*>([^<]*(?:PC|PE|UC|UE|NC|CON|OEC|PMT)[^<]*)<\/th>/i) ||
-                          tableMatch[0].match(/(?:PC|PCC|PE|UC|UCC|UE|NC|CON|OEC|PMT)/i);
+    // Extract category code from first div child
+    const categoryCode = $el.find('> div').first().text().trim().toUpperCase();
+    if (!categoryCode) return;
 
-    if (!categoryMatch) continue;
-
-    const categoryCode = (categoryMatch[1] || categoryMatch[0]).match(/(PC|PCC|PE|UC|UCC|UE|NC|CON|OEC|PMT)/i)?.[1]?.toUpperCase() || 'PC';
-    const categoryName = categoryNames[categoryCode] || categoryCode;
-
-    const tbodyMatch = tableHtml.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
-    if (!tbodyMatch) continue;
-
-    const rows = tbodyMatch[1].split('</tr>').filter(r => r.includes('<tr'));
-    const courses: CurriculumData['categories'][0]['courses'] = [];
-    let categoryCredits = 0;
+    // Extract credits and max credits from the small/span pairs
     let earnedCredits = 0;
+    let requiredCredits = 0;
 
-    for (const rowHtml of rows) {
-      const row = rowHtml + '</tr>';
-      const cellMatches = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)];
-      const cells = cellMatches.map(m => cleanText(m[1]));
+    $el.find('> div').each((_, div) => {
+      const $div = $(div);
+      const smallText = $div.find('small').text().toLowerCase();
+      const spanText = $div.find('span').text().trim();
+      const value = parseInt(spanText) || 0;
 
-      if (cells.length < 3) continue;
-
-      const courseCode = cells[0];
-      const courseName = cells[1];
-
-      if (courseCode.toLowerCase().includes('code') || courseName.toLowerCase().includes('title')) continue;
-
-      let credits = 0;
-      for (let i = cells.length - 1; i >= 2; i--) {
-        const num = parseInt(cells[i]);
-        if (!isNaN(num) && num <= 10) {
-          credits = num;
-          break;
-        }
+      if (smallText.includes('credit:') && !smallText.includes('max')) {
+        earnedCredits = value;
+      } else if (smallText.includes('max')) {
+        requiredCredits = value;
       }
+    });
 
-      let status: 'completed' | 'in_progress' | 'pending' = 'pending';
-      let grade: string | undefined;
+    // Find category name from sibling elements
+    const $card = $el.closest('.card, .row');
+    let categoryName = $card.find('.d-block.text-sm, span.d-block').text().trim();
 
-      for (const cell of cells) {
-        if (/^[SABCDEF]$/.test(cell) || /^[SABCDEF][+-]?$/.test(cell)) {
-          grade = cell;
-          status = 'completed';
-          earnedCredits += credits;
-          break;
-        }
-        if (cell.toLowerCase().includes('registered') || cell.toLowerCase().includes('ongoing')) {
-          status = 'in_progress';
-        }
-      }
-
-      categoryCredits += credits;
-
-      courses.push({ courseCode, courseName, credits, status, grade });
+    // Fallback to our mapping if not found
+    if (!categoryName) {
+      categoryName = categoryNames[categoryCode] || categoryCode;
     }
 
-    if (courses.length > 0) {
+    // Only add valid categories
+    if (categoryCode && requiredCredits > 0) {
       categories.push({
         category: categoryCode as CurriculumData['categories'][0]['category'],
         categoryName,
-        requiredCredits: categoryCredits,
+        requiredCredits,
         earnedCredits,
-        courses,
+        courses: [], // Courses are loaded dynamically via AJAX
       });
 
-      totalRequiredCredits += categoryCredits;
       totalEarnedCredits += earnedCredits;
+    }
+  });
+
+  // If no symbol-label elements found, try alternative parsing (table-based curriculum)
+  if (categories.length === 0) {
+    // Fallback to legacy table-based parsing for older VTOP versions
+    html = normalizeHtml(html);
+
+    const tableMatches = html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi);
+
+    for (const tableMatch of tableMatches) {
+      const tableHtml = tableMatch[1];
+
+      if (!tableHtml.includes('Credit') && !tableHtml.includes('L-T-P')) continue;
+
+      const categoryMatch = tableHtml.match(/<th[^>]*colspan[^>]*>([^<]*(?:PC|PE|UC|UE|NC|CON|OEC|PMT)[^<]*)<\/th>/i) ||
+                            tableMatch[0].match(/(?:PC|PCC|PE|UC|UCC|UE|NC|CON|OEC|PMT)/i);
+
+      if (!categoryMatch) continue;
+
+      const categoryCode = (categoryMatch[1] || categoryMatch[0]).match(/(PC|PCC|PE|UC|UCC|UE|NC|CON|OEC|PMT)/i)?.[1]?.toUpperCase() || 'PC';
+      const categoryName = categoryNames[categoryCode] || categoryCode;
+
+      const tbodyMatch = tableHtml.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
+      if (!tbodyMatch) continue;
+
+      const rows = tbodyMatch[1].split('</tr>').filter(r => r.includes('<tr'));
+      const courses: CurriculumData['categories'][0]['courses'] = [];
+      let categoryCredits = 0;
+      let catEarnedCredits = 0;
+
+      for (const rowHtml of rows) {
+        const row = rowHtml + '</tr>';
+        const cellMatches = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)];
+        const cells = cellMatches.map(m => cleanText(m[1]));
+
+        if (cells.length < 3) continue;
+
+        const courseCode = cells[0];
+        const courseName = cells[1];
+
+        if (courseCode.toLowerCase().includes('code') || courseName.toLowerCase().includes('title')) continue;
+
+        let credits = 0;
+        for (let i = cells.length - 1; i >= 2; i--) {
+          const num = parseInt(cells[i]);
+          if (!isNaN(num) && num <= 10) {
+            credits = num;
+            break;
+          }
+        }
+
+        let status: 'completed' | 'in_progress' | 'pending' = 'pending';
+        let grade: string | undefined;
+
+        for (const cell of cells) {
+          if (/^[SABCDEF]$/.test(cell) || /^[SABCDEF][+-]?$/.test(cell)) {
+            grade = cell;
+            status = 'completed';
+            catEarnedCredits += credits;
+            break;
+          }
+          if (cell.toLowerCase().includes('registered') || cell.toLowerCase().includes('ongoing')) {
+            status = 'in_progress';
+          }
+        }
+
+        categoryCredits += credits;
+
+        courses.push({ courseCode, courseName, credits, status, grade });
+      }
+
+      if (courses.length > 0) {
+        categories.push({
+          category: categoryCode as CurriculumData['categories'][0]['category'],
+          categoryName,
+          requiredCredits: categoryCredits,
+          earnedCredits: catEarnedCredits,
+          courses,
+        });
+
+        totalRequiredCredits += categoryCredits;
+        totalEarnedCredits += catEarnedCredits;
+      }
     }
   }
 
   return { totalRequiredCredits, totalEarnedCredits, categories };
+}
+
+/**
+ * Parse curriculum category detail HTML (loaded via AJAX for each category).
+ * Returns the list of courses in that category.
+ */
+export function parseCurriculumCategoryHTML(html: string): CurriculumData['categories'][0]['courses'] {
+  const $ = cheerio.load(html);
+  const courses: CurriculumData['categories'][0]['courses'] = [];
+
+  // Find all tables with course data
+  $('table.example tbody tr, table.table tbody tr').each((_, row) => {
+    const $row = $(row);
+    const cells = $row.find('td');
+
+    // Skip if not enough cells
+    if (cells.length < 5) return;
+
+    // S.No., Code/Syllabus, Title, Type, Credit, L, T, P, J
+    // Index:  0      1         2      3      4    5  6  7  8
+    const courseCodeCell = $(cells[1]);
+    const courseCode = courseCodeCell.find('span.float-start').text().trim() ||
+                       courseCodeCell.text().trim().split(/\s+/)[0];
+    const courseName = $(cells[2]).text().trim();
+    const courseType = $(cells[3]).text().trim();
+    const creditsStr = $(cells[4]).text().trim();
+    const credits = parseFloat(creditsStr) || 0;
+
+    // Skip header rows or empty rows
+    if (!courseCode || courseCode.toLowerCase().includes('code')) return;
+    if (!courseName || courseName.toLowerCase().includes('title')) return;
+
+    // Determine status - in this view we don't have grade/status info
+    // so all courses are shown as 'pending' by default
+    let status: 'completed' | 'in_progress' | 'pending' = 'pending';
+
+    courses.push({
+      courseCode,
+      courseName,
+      credits,
+      status,
+    });
+  });
+
+  return courses;
 }
 
 export function parseCoursePageHTML(html: string): CoursePageData {

@@ -1,95 +1,36 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, memo, useMemo } from 'react';
 import { AppShell } from '@/components/layout';
-import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { MarksData, CourseMarks, ExamMark, Semester } from '@/types/vtop';
+import { LoadingCards, ErrorState, EmptyState, PageHeader } from '@/components/data-states';
+import { Icons } from '@/components/icons';
+import { useSemesterData } from '@/hooks/use-semester-data';
+import type { MarksData, CourseMarks, ExamMark } from '@/types/vtop';
 import { cn } from '@/lib/utils';
 
 export default function MarksPage() {
-  const router = useRouter();
-  const [semesters, setSemesters] = useState<Semester[]>([]);
-  const [selectedSemester, setSelectedSemester] = useState<string>('');
-  const [marks, setMarks] = useState<MarksData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Fetch semesters on mount
-  useEffect(() => {
-    async function fetchSemesters() {
-      try {
-        const response = await fetch('/api/vtop/attendance');
-        const data = await response.json();
-
-        if (data.success) {
-          setSemesters(data.data.semesters);
-          if (data.data.semesters.length > 0) {
-            const current = data.data.semesters.find((s: Semester) => s.isCurrent) || data.data.semesters[0];
-            setSelectedSemester(current.id);
-          }
-        } else {
-          if (data.error?.code === 'SESSION_EXPIRED' || data.error?.code === 'UNAUTHORIZED') {
-            router.push('/login');
-            return;
-          }
-          setError(data.error?.message || 'Failed to load semesters');
-        }
-      } catch {
-        setError('Failed to connect to server');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchSemesters();
-  }, [router]);
-
-  // Fetch marks when semester changes
-  useEffect(() => {
-    if (!selectedSemester) return;
-
-    async function fetchMarks() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await fetch(`/api/vtop/marks?semesterId=${selectedSemester}`);
-        const data = await response.json();
-
-        if (data.success) {
-          setMarks(data.data);
-        } else {
-          if (data.error?.code === 'SESSION_EXPIRED' || data.error?.code === 'UNAUTHORIZED') {
-            router.push('/login');
-            return;
-          }
-          setError(data.error?.message || 'Failed to load marks');
-        }
-      } catch {
-        setError('Failed to connect to server');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchMarks();
-  }, [selectedSemester, router]);
+  const {
+    semesters,
+    selectedSemester,
+    setSelectedSemester,
+    data: marks,
+    loading,
+    error,
+    refetch,
+  } = useSemesterData<MarksData>({
+    semestersEndpoint: '/api/vtop/attendance',
+    dataEndpoint: '/api/vtop/marks',
+  });
 
   return (
     <AppShell>
       <div className="min-h-screen bg-background">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          {/* Header */}
-          <header className="mb-8">
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              Marks
-            </h1>
-            <p className="mt-1 text-muted-foreground">
-              View your exam scores and continuous assessment marks
-            </p>
-          </header>
+          <PageHeader
+            title="Marks"
+            description="View your exam scores and continuous assessment marks"
+          />
 
           {/* Semester Selector */}
           <div className="mb-6">
@@ -117,25 +58,10 @@ export default function MarksPage() {
               ))}
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="mb-4 rounded-full bg-destructive/10 p-4">
-                <svg className="size-8 text-destructive" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" x2="12" y1="8" y2="12" />
-                  <line x1="12" x2="12.01" y1="16" y2="16" />
-                </svg>
-              </div>
-              <p className="text-lg font-medium text-destructive">{error}</p>
-              <Button onClick={() => window.location.reload()} className="mt-4">
-                Try Again
-              </Button>
-            </div>
+            <ErrorState error={error} onRetry={refetch} />
           ) : marks && marks.courses.length > 0 ? (
             <div className="space-y-6">
-              {/* Summary Cards */}
               <MarksSummary courses={marks.courses} />
-
-              {/* Course Cards */}
               <div className="space-y-4">
                 {marks.courses.map((course, index) => (
                   <CourseMarksCard
@@ -146,23 +72,11 @@ export default function MarksPage() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="mb-4 rounded-full bg-muted p-4">
-                <svg className="size-8 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <path d="M14 2v6h6" />
-                  <path d="M16 13H8" />
-                  <path d="M16 17H8" />
-                  <path d="M10 9H8" />
-                </svg>
-              </div>
-              <p className="text-lg font-medium text-muted-foreground">
-                No marks data available
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Marks will appear here once they are published
-              </p>
-            </div>
+            <EmptyState
+              icon="marks"
+              title="No marks data available"
+              subtitle="Marks will appear here once they are published"
+            />
           )}
         </div>
       </div>
@@ -170,26 +84,31 @@ export default function MarksPage() {
   );
 }
 
-function MarksSummary({ courses }: { courses: CourseMarks[] }) {
-  const totalWeighted = courses.reduce((sum, c) => sum + c.totalWeightedScore, 0);
-  const avgWeighted = courses.length > 0 ? totalWeighted / courses.length : 0;
+const MarksSummary = memo(function MarksSummary({
+  courses,
+}: {
+  courses: CourseMarks[];
+}) {
+  const stats = useMemo(() => {
+    const totalWeighted = courses.reduce((sum, c) => sum + c.totalWeightedScore, 0);
+    const avgWeighted = courses.length > 0 ? totalWeighted / courses.length : 0;
+    const coursesWithMarks = courses.filter(c => c.marks.some(m => m.status === 'graded')).length;
+    const pendingExams = courses.reduce((sum, c) => sum + c.marks.filter(m => m.status === 'pending').length, 0);
+    const sortedCourses = [...courses].sort((a, b) => b.totalWeightedScore - a.totalWeightedScore);
+    const bestCourse = sortedCourses[0];
+    const worstCourse = sortedCourses[sortedCourses.length - 1];
 
-  const coursesWithMarks = courses.filter(c => c.marks.some(m => m.status === 'graded')).length;
-  const pendingExams = courses.reduce((sum, c) => sum + c.marks.filter(m => m.status === 'pending').length, 0);
-
-  // Find best and worst performing courses
-  const sortedCourses = [...courses].sort((a, b) => b.totalWeightedScore - a.totalWeightedScore);
-  const bestCourse = sortedCourses[0];
-  const worstCourse = sortedCourses[sortedCourses.length - 1];
+    return { avgWeighted, coursesWithMarks, pendingExams, bestCourse, worstCourse };
+  }, [courses]);
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {/* Average Score */}
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-4">
-          <ProgressRing percentage={avgWeighted} size={56} strokeWidth={5} />
+          <ProgressRing percentage={stats.avgWeighted} size={56} strokeWidth={5} />
           <div>
-            <p className="text-2xl font-bold tabular-nums">{avgWeighted.toFixed(1)}%</p>
+            <p className="text-2xl font-bold tabular-nums">{stats.avgWeighted.toFixed(1)}%</p>
             <p className="text-sm text-muted-foreground">Average Score</p>
           </div>
         </div>
@@ -199,13 +118,10 @@ function MarksSummary({ courses }: { courses: CourseMarks[] }) {
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-primary/10 p-2 text-primary">
-            <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-              <path d="m9 11 3 3L22 4" />
-            </svg>
+            <Icons.attendance className="size-5" />
           </div>
           <div>
-            <p className="text-2xl font-bold tabular-nums">{coursesWithMarks}/{courses.length}</p>
+            <p className="text-2xl font-bold tabular-nums">{stats.coursesWithMarks}/{courses.length}</p>
             <p className="text-sm text-muted-foreground">Courses Graded</p>
           </div>
         </div>
@@ -215,13 +131,10 @@ function MarksSummary({ courses }: { courses: CourseMarks[] }) {
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-warning/10 p-2 text-warning">
-            <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
+            <Icons.clock className="size-5" />
           </div>
           <div>
-            <p className="text-2xl font-bold tabular-nums">{pendingExams}</p>
+            <p className="text-2xl font-bold tabular-nums">{stats.pendingExams}</p>
             <p className="text-sm text-muted-foreground">Pending Exams</p>
           </div>
         </div>
@@ -230,16 +143,16 @@ function MarksSummary({ courses }: { courses: CourseMarks[] }) {
       {/* Best/Worst Course */}
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="space-y-2">
-          {bestCourse && (
+          {stats.bestCourse && (
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-xs text-muted-foreground">{bestCourse.courseCode}</span>
-              <span className="text-sm font-semibold text-success">{bestCourse.totalWeightedScore.toFixed(1)}%</span>
+              <span className="truncate text-xs text-muted-foreground">{stats.bestCourse.courseCode}</span>
+              <span className="text-sm font-semibold text-success">{stats.bestCourse.totalWeightedScore.toFixed(1)}%</span>
             </div>
           )}
-          {worstCourse && worstCourse !== bestCourse && (
+          {stats.worstCourse && stats.worstCourse !== stats.bestCourse && (
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-xs text-muted-foreground">{worstCourse.courseCode}</span>
-              <span className="text-sm font-semibold text-destructive">{worstCourse.totalWeightedScore.toFixed(1)}%</span>
+              <span className="truncate text-xs text-muted-foreground">{stats.worstCourse.courseCode}</span>
+              <span className="text-sm font-semibold text-destructive">{stats.worstCourse.totalWeightedScore.toFixed(1)}%</span>
             </div>
           )}
           <p className="text-xs text-muted-foreground">Best / Lowest</p>
@@ -247,9 +160,9 @@ function MarksSummary({ courses }: { courses: CourseMarks[] }) {
       </div>
     </div>
   );
-}
+});
 
-function ProgressRing({
+const ProgressRing = memo(function ProgressRing({
   percentage,
   size = 60,
   strokeWidth = 5,
@@ -292,23 +205,26 @@ function ProgressRing({
       />
     </svg>
   );
-}
+});
 
-function CourseMarksCard({ course }: { course: CourseMarks }) {
+const CourseMarksCard = memo(function CourseMarksCard({
+  course,
+}: {
+  course: CourseMarks;
+}) {
   const [expanded, setExpanded] = useState(false);
 
-  const getScoreColor = (percentage: number) => {
-    if (percentage >= 80) return 'text-success';
-    if (percentage >= 60) return 'text-warning';
-    return 'text-destructive';
-  };
-
-  const gradedMarks = course.marks.filter(m => m.status === 'graded');
-  const pendingMarks = course.marks.filter(m => m.status === 'pending');
+  const { gradedMarks, pendingMarks, scoreColor } = useMemo(() => {
+    const graded = course.marks.filter(m => m.status === 'graded');
+    const pending = course.marks.filter(m => m.status === 'pending');
+    const color = course.totalWeightedScore >= 80 ? 'text-success'
+      : course.totalWeightedScore >= 60 ? 'text-warning'
+      : 'text-destructive';
+    return { gradedMarks: graded, pendingMarks: pending, scoreColor: color };
+  }, [course.marks, course.totalWeightedScore]);
 
   return (
     <div className="rounded-xl border border-border bg-card transition-colors hover:bg-muted/30">
-      {/* Header - Always Visible */}
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center justify-between gap-4 p-5 text-left"
@@ -339,28 +255,19 @@ function CourseMarksCard({ course }: { course: CourseMarks }) {
 
         <div className="flex items-center gap-4">
           <div className="text-right">
-            <p className={cn('text-2xl font-bold tabular-nums', getScoreColor(course.totalWeightedScore))}>
+            <p className={cn('text-2xl font-bold tabular-nums', scoreColor)}>
               {course.totalWeightedScore.toFixed(1)}%
             </p>
             <p className="text-xs text-muted-foreground">
               {gradedMarks.length}/{course.marks.length} exams
             </p>
           </div>
-          <svg
+          <Icons.chevronDown
             className={cn('size-5 text-muted-foreground transition-transform', expanded && 'rotate-180')}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="m6 9 6 6 6-6" />
-          </svg>
+          />
         </div>
       </button>
 
-      {/* Expanded Content */}
       {expanded && (
         <div className="border-t border-border px-5 py-4">
           <div className="space-y-3">
@@ -372,50 +279,40 @@ function CourseMarksCard({ course }: { course: CourseMarks }) {
       )}
     </div>
   );
-}
+});
 
-function ExamMarkRow({ mark }: { mark: ExamMark }) {
+const ExamMarkRow = memo(function ExamMarkRow({ mark }: { mark: ExamMark }) {
   const percentage = mark.scoredMarks !== null ? (mark.scoredMarks / mark.maxMarks) * 100 : 0;
 
-  const getStatusBadge = () => {
-    switch (mark.status) {
-      case 'graded':
-        return { text: 'Graded', bgClass: 'bg-success/10', textClass: 'text-success' };
-      case 'pending':
-        return { text: 'Pending', bgClass: 'bg-warning/10', textClass: 'text-warning' };
-      case 'absent':
-        return { text: 'Absent', bgClass: 'bg-destructive/10', textClass: 'text-destructive' };
-    }
-  };
-
-  const getBarColor = () => {
-    if (mark.status !== 'graded') return 'bg-muted';
-    if (percentage >= 80) return 'bg-success';
-    if (percentage >= 60) return 'bg-warning';
-    return 'bg-destructive';
-  };
-
-  const status = getStatusBadge();
+  const { status, barColor } = useMemo(() => {
+    const statusMap = {
+      graded: { text: 'Graded', bgClass: 'bg-success/10', textClass: 'text-success' },
+      pending: { text: 'Pending', bgClass: 'bg-warning/10', textClass: 'text-warning' },
+      absent: { text: 'Absent', bgClass: 'bg-destructive/10', textClass: 'text-destructive' },
+    };
+    const bar = mark.status !== 'graded' ? 'bg-muted'
+      : percentage >= 80 ? 'bg-success'
+      : percentage >= 60 ? 'bg-warning'
+      : 'bg-destructive';
+    return { status: statusMap[mark.status], barColor: bar };
+  }, [mark.status, percentage]);
 
   return (
     <div className="flex items-center gap-4">
-      {/* Exam Name */}
       <div className="w-24 shrink-0">
         <p className="text-sm font-medium">{mark.examName}</p>
         <p className="text-xs text-muted-foreground">{mark.weightage}% weight</p>
       </div>
 
-      {/* Progress Bar */}
       <div className="flex-1">
         <div className="h-2 overflow-hidden rounded-full bg-muted/50">
           <div
-            className={cn('h-full rounded-full transition-all', getBarColor())}
+            className={cn('h-full rounded-full transition-all', barColor)}
             style={{ width: `${mark.status === 'graded' ? percentage : 0}%` }}
           />
         </div>
       </div>
 
-      {/* Score */}
       <div className="w-20 text-right">
         {mark.status === 'graded' ? (
           <p className="text-sm font-semibold tabular-nums">
@@ -429,4 +326,4 @@ function ExamMarkRow({ mark }: { mark: ExamMark }) {
       </div>
     </div>
   );
-}
+});

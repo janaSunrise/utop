@@ -1,94 +1,37 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { memo, useMemo } from 'react';
 import { AppShell } from '@/components/layout';
-import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { AttendanceData, AttendanceEntry, Semester } from '@/types/vtop';
+import { LoadingCards, ErrorState, EmptyState, PageHeader } from '@/components/data-states';
+import { Icons } from '@/components/icons';
+import { useSemesterData } from '@/hooks/use-semester-data';
+import type { AttendanceData, AttendanceEntry } from '@/types/vtop';
 import { calculateClassesNeeded, calculateClassesCanSkip } from '@/lib/vtop-client';
 import { cn } from '@/lib/utils';
 
 export default function AttendancePage() {
-  const router = useRouter();
-  const [semesters, setSemesters] = useState<Semester[]>([]);
-  const [selectedSemester, setSelectedSemester] = useState<string>('');
-  const [attendance, setAttendance] = useState<AttendanceData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchSemesters() {
-      try {
-        const response = await fetch('/api/vtop/attendance');
-        const data = await response.json();
-
-        if (data.success) {
-          setSemesters(data.data.semesters);
-          if (data.data.semesters.length > 0) {
-            const current = data.data.semesters.find((s: Semester) => s.isCurrent) || data.data.semesters[0];
-            setSelectedSemester(current.id);
-          }
-        } else {
-          if (data.error?.code === 'SESSION_EXPIRED' || data.error?.code === 'UNAUTHORIZED') {
-            router.push('/login');
-            return;
-          }
-          setError(data.error?.message || 'Failed to load semesters');
-        }
-      } catch {
-        setError('Failed to connect to server');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchSemesters();
-  }, [router]);
-
-  useEffect(() => {
-    if (!selectedSemester) return;
-
-    async function fetchAttendance() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await fetch(`/api/vtop/attendance?semesterId=${selectedSemester}`);
-        const data = await response.json();
-
-        if (data.success) {
-          setAttendance(data.data);
-        } else {
-          if (data.error?.code === 'SESSION_EXPIRED' || data.error?.code === 'UNAUTHORIZED') {
-            router.push('/login');
-            return;
-          }
-          setError(data.error?.message || 'Failed to load attendance');
-        }
-      } catch {
-        setError('Failed to connect to server');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchAttendance();
-  }, [selectedSemester, router]);
+  const {
+    semesters,
+    selectedSemester,
+    setSelectedSemester,
+    data: attendance,
+    loading,
+    error,
+    refetch,
+  } = useSemesterData<AttendanceData>({
+    semestersEndpoint: '/api/vtop/attendance',
+    dataEndpoint: '/api/vtop/attendance',
+  });
 
   return (
     <AppShell>
       <div className="min-h-screen bg-background">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          {/* Header */}
-          <header className="mb-8">
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              Attendance
-            </h1>
-            <p className="mt-1 text-muted-foreground">
-              Track your course-wise attendance and eligibility
-            </p>
-          </header>
+          <PageHeader
+            title="Attendance"
+            description="Track your course-wise attendance and eligibility"
+          />
 
           {/* Semester Selector */}
           <div className="mb-6">
@@ -110,31 +53,12 @@ export default function AttendancePage() {
           </div>
 
           {loading ? (
-            <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-40 animate-pulse rounded-xl bg-muted" />
-              ))}
-            </div>
+            <LoadingCards count={3} height="h-40" />
           ) : error ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="mb-4 rounded-full bg-destructive/10 p-4">
-                <svg className="size-8 text-destructive" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" x2="12" y1="8" y2="12" />
-                  <line x1="12" x2="12.01" y1="16" y2="16" />
-                </svg>
-              </div>
-              <p className="text-lg font-medium text-destructive">{error}</p>
-              <Button onClick={() => window.location.reload()} className="mt-4">
-                Try Again
-              </Button>
-            </div>
+            <ErrorState error={error} onRetry={refetch} />
           ) : attendance && attendance.entries.length > 0 ? (
             <div className="space-y-6">
-              {/* Summary Cards */}
               <AttendanceSummary entries={attendance.entries} />
-
-              {/* Course Cards */}
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {attendance.entries.map((entry, index) => (
                   <AttendanceCard
@@ -145,22 +69,11 @@ export default function AttendancePage() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="mb-4 rounded-full bg-muted p-4">
-                <svg className="size-8 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect width="18" height="18" x="3" y="4" rx="2" />
-                  <path d="M16 2v4" />
-                  <path d="M8 2v4" />
-                  <path d="M3 10h18" />
-                </svg>
-              </div>
-              <p className="text-lg font-medium text-muted-foreground">
-                No attendance data available
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Select a different semester or check back later
-              </p>
-            </div>
+            <EmptyState
+              icon="timetable"
+              title="No attendance data available"
+              subtitle="Select a different semester or check back later"
+            />
           )}
         </div>
       </div>
@@ -168,23 +81,31 @@ export default function AttendancePage() {
   );
 }
 
-function AttendanceSummary({ entries }: { entries: AttendanceEntry[] }) {
-  const totalAttended = entries.reduce((sum, e) => sum + e.attendedClasses, 0);
-  const totalClasses = entries.reduce((sum, e) => sum + e.totalClasses, 0);
-  const overallPercentage = totalClasses > 0 ? (totalAttended / totalClasses) * 100 : 0;
+const AttendanceSummary = memo(function AttendanceSummary({
+  entries,
+}: {
+  entries: AttendanceEntry[];
+}) {
+  const stats = useMemo(() => {
+    const totalAttended = entries.reduce((sum, e) => sum + e.attendedClasses, 0);
+    const totalClasses = entries.reduce((sum, e) => sum + e.totalClasses, 0);
+    const overallPercentage = totalClasses > 0 ? (totalAttended / totalClasses) * 100 : 0;
 
-  const belowThreshold = entries.filter(e => e.attendancePercentage < 75).length;
-  const atRisk = entries.filter(e => e.attendancePercentage >= 75 && e.attendancePercentage < 85).length;
-  const safe = entries.filter(e => e.attendancePercentage >= 85).length;
+    const belowThreshold = entries.filter(e => e.attendancePercentage < 75).length;
+    const atRisk = entries.filter(e => e.attendancePercentage >= 75 && e.attendancePercentage < 85).length;
+    const safe = entries.filter(e => e.attendancePercentage >= 85).length;
+
+    return { totalAttended, totalClasses, overallPercentage, belowThreshold, atRisk, safe };
+  }, [entries]);
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {/* Overall Attendance */}
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-4">
-          <ProgressRing percentage={overallPercentage} size={56} strokeWidth={5} />
+          <ProgressRing percentage={stats.overallPercentage} size={56} strokeWidth={5} />
           <div>
-            <p className="text-2xl font-bold tabular-nums">{overallPercentage.toFixed(1)}%</p>
+            <p className="text-2xl font-bold tabular-nums">{stats.overallPercentage.toFixed(1)}%</p>
             <p className="text-sm text-muted-foreground">Overall</p>
           </div>
         </div>
@@ -194,13 +115,10 @@ function AttendanceSummary({ entries }: { entries: AttendanceEntry[] }) {
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-primary/10 p-2 text-primary">
-            <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-              <path d="m9 11 3 3L22 4" />
-            </svg>
+            <Icons.attendance className="size-5" />
           </div>
           <div>
-            <p className="text-2xl font-bold tabular-nums">{totalAttended}/{totalClasses}</p>
+            <p className="text-2xl font-bold tabular-nums">{stats.totalAttended}/{stats.totalClasses}</p>
             <p className="text-sm text-muted-foreground">Classes Attended</p>
           </div>
         </div>
@@ -210,17 +128,17 @@ function AttendanceSummary({ entries }: { entries: AttendanceEntry[] }) {
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-4">
           <div className="flex gap-1">
-            <StatusDot color="success" count={safe} />
-            <StatusDot color="warning" count={atRisk} />
-            <StatusDot color="destructive" count={belowThreshold} />
+            <StatusDot color="success" count={stats.safe} />
+            <StatusDot color="warning" count={stats.atRisk} />
+            <StatusDot color="destructive" count={stats.belowThreshold} />
           </div>
           <div>
             <p className="text-sm font-medium">
-              <span className="text-success">{safe}</span>
+              <span className="text-success">{stats.safe}</span>
               <span className="text-muted-foreground"> / </span>
-              <span className="text-warning">{atRisk}</span>
+              <span className="text-warning">{stats.atRisk}</span>
               <span className="text-muted-foreground"> / </span>
-              <span className="text-destructive">{belowThreshold}</span>
+              <span className="text-destructive">{stats.belowThreshold}</span>
             </p>
             <p className="text-sm text-muted-foreground">Safe / Risk / Low</p>
           </div>
@@ -231,9 +149,7 @@ function AttendanceSummary({ entries }: { entries: AttendanceEntry[] }) {
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-muted p-2 text-muted-foreground">
-            <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-            </svg>
+            <Icons.book className="size-5" />
           </div>
           <div>
             <p className="text-2xl font-bold tabular-nums">{entries.length}</p>
@@ -243,9 +159,15 @@ function AttendanceSummary({ entries }: { entries: AttendanceEntry[] }) {
       </div>
     </div>
   );
-}
+});
 
-function StatusDot({ color, count }: { color: 'success' | 'warning' | 'destructive'; count: number }) {
+const StatusDot = memo(function StatusDot({
+  color,
+  count,
+}: {
+  color: 'success' | 'warning' | 'destructive';
+  count: number;
+}) {
   const colorClasses = {
     success: 'bg-success',
     warning: 'bg-warning',
@@ -262,9 +184,9 @@ function StatusDot({ color, count }: { color: 'success' | 'warning' | 'destructi
       )}
     </div>
   );
-}
+});
 
-function ProgressRing({
+const ProgressRing = memo(function ProgressRing({
   percentage,
   size = 60,
   strokeWidth = 5,
@@ -285,7 +207,6 @@ function ProgressRing({
 
   return (
     <svg width={size} height={size} className="progress-ring">
-      {/* Background circle */}
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -295,7 +216,6 @@ function ProgressRing({
         strokeWidth={strokeWidth}
         className="text-muted/30"
       />
-      {/* Progress circle */}
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -309,20 +229,22 @@ function ProgressRing({
       />
     </svg>
   );
-}
+});
 
-function AttendanceCard({ entry }: { entry: AttendanceEntry }) {
+const AttendanceCard = memo(function AttendanceCard({
+  entry,
+}: {
+  entry: AttendanceEntry;
+}) {
   const percentage = entry.attendancePercentage;
   const classesNeeded = calculateClassesNeeded(entry.attendedClasses, entry.totalClasses, 75);
   const classesCanSkip = calculateClassesCanSkip(entry.attendedClasses, entry.totalClasses, 75);
 
-  const getStatusBadge = () => {
+  const status = useMemo(() => {
     if (percentage >= 85) return { text: 'Safe', bgClass: 'bg-success/10', textClass: 'text-success' };
     if (percentage >= 75) return { text: 'At Risk', bgClass: 'bg-warning/10', textClass: 'text-warning' };
     return { text: 'Low', bgClass: 'bg-destructive/10', textClass: 'text-destructive' };
-  };
-
-  const status = getStatusBadge();
+  }, [percentage]);
 
   return (
     <div className="rounded-xl border border-border bg-card transition-colors hover:bg-muted/50">
@@ -347,7 +269,6 @@ function AttendanceCard({ entry }: { entry: AttendanceEntry }) {
           )}
         </div>
 
-        {/* Status Badge */}
         <span className={cn(
           'shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium',
           status.bgClass,
@@ -393,14 +314,10 @@ function AttendanceCard({ entry }: { entry: AttendanceEntry }) {
       {/* Debarred Warning */}
       {entry.isDebarred && (
         <div className="flex items-center gap-2 border-t border-destructive/20 bg-destructive/5 px-4 py-2 text-xs text-destructive">
-          <svg className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-            <line x1="12" x2="12" y1="9" y2="13" />
-            <line x1="12" x2="12.01" y1="17" y2="17" />
-          </svg>
+          <Icons.warning className="size-4 shrink-0" />
           Debarred from this course
         </div>
       )}
     </div>
   );
-}
+});

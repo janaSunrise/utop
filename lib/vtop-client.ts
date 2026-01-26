@@ -23,12 +23,14 @@ import {
   parseAttendanceHTML,
   parseTimetableHTML,
   parseCurriculumHTML,
+  parseCurriculumCategoryHTML,
   parseCoursePageHTML,
   parseMarksHTML,
   parseGradesHTML,
   parseExamScheduleHTML,
   parseProfileHTML,
 } from './vtop-parsers';
+import type { CurriculumCourse } from '@/types/vtop';
 
 // Re-export utilities for external use
 export { calculateClassesNeeded, calculateClassesCanSkip } from './vtop-parsers';
@@ -657,6 +659,23 @@ export class VTOPClient {
     return parseCurriculumHTML(html);
   }
 
+  /**
+   * Fetch courses for a specific curriculum category.
+   * Categories: NC, UCC, PCC, CON, OEC, PMT, etc.
+   */
+  async getCurriculumCategoryCourses(categoryId: string): Promise<CurriculumCourse[]> {
+    if (!this.registrationNumber) throw new Error('Registration number required');
+
+    const html = await this.authenticatedPost('/vtop/academics/common/curriculumCategoryView', {
+      categoryId,
+      authorizedID: this.registrationNumber,
+      _csrf: this.csrf || '',
+      x: getUTCDateString(),
+    });
+
+    return parseCurriculumCategoryHTML(html);
+  }
+
   async getCoursePage(courseId: string): Promise<CoursePageData> {
     if (!this.registrationNumber) throw new Error('Registration number required');
 
@@ -728,5 +747,28 @@ export class VTOPClient {
 
   getProfilePhotoUrl(registrationNumber: string): string {
     return `${VTOP_BASE_URL}/vtop/users/image/?id=${registrationNumber}`;
+  }
+
+  /**
+   * Download course syllabus PDF.
+   * Returns the PDF binary data.
+   */
+  async getCourseSyllabus(courseCode: string): Promise<{ data: ArrayBuffer; contentType: string }> {
+    if (!this.registrationNumber) throw new Error('Registration number required');
+
+    const response = await this.post('/vtop/courseSyllabusDownload1', {
+      courseCode,
+      authorizedID: this.registrationNumber,
+      _csrf: this.csrf || '',
+    });
+
+    if (response.status !== 200) {
+      throw new Error(`Failed to download syllabus: ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type') || 'application/pdf';
+    const data = await response.arrayBuffer();
+
+    return { data, contentType };
   }
 }

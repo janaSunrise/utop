@@ -163,3 +163,46 @@ export function optionalQueryParam(
 ): string {
   return url.searchParams.get(param) || defaultValue;
 }
+
+/**
+ * In-flight request tracker for deduplication.
+ * Prevents duplicate concurrent requests to the same resource.
+ */
+const inflightRequests = new Map<string, Promise<unknown>>();
+
+/**
+ * Execute a fetch operation with request deduplication.
+ * If a request with the same key is already in progress, returns the existing promise
+ * instead of starting a new request.
+ *
+ * @param key - Unique identifier for the request (e.g., "attendance:user123:sem456")
+ * @param fetcher - Async function that performs the actual fetch
+ * @returns Promise that resolves to the fetched data
+ *
+ * @example
+ * ```ts
+ * const data = await deduplicatedFetch(
+ *   `attendance:${userId}:${semesterId}`,
+ *   () => client.getAttendance(semesterId)
+ * );
+ * ```
+ */
+export async function deduplicatedFetch<T>(
+  key: string,
+  fetcher: () => Promise<T>
+): Promise<T> {
+  // Check if request is already in flight
+  const existing = inflightRequests.get(key);
+  if (existing) {
+    return existing as Promise<T>;
+  }
+
+  // Start new request and track it
+  const promise = fetcher().finally(() => {
+    // Clean up after request completes (success or error)
+    inflightRequests.delete(key);
+  });
+
+  inflightRequests.set(key, promise);
+  return promise;
+}
