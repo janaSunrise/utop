@@ -681,16 +681,24 @@ export class VTOPClient {
     return parseMarksHTML(html, semesterId);
   }
 
-  async getGrades(): Promise<GradesData> {
+  async getGrades(semesterId: string): Promise<GradesData> {
     if (!this.registrationNumber) throw new Error('Registration number required');
 
-    const html = await this.authenticatedPost('/vtop/examinations/examGradeView/StudentGradeHistory', {
+    // Navigate to grade view page first
+    await this.authenticatedPost('/vtop/examinations/examGradeView/StudentGradeHistory', {
       verifyMenu: 'true',
       authorizedID: this.registrationNumber,
       _csrf: this.csrf || '',
     });
 
-    return parseGradesHTML(html);
+    // Fetch grades for specific semester
+    const html = await this.authenticatedPost('/vtop/examinations/examGradeView/doStudentGradeView', {
+      semesterSubId: semesterId,
+      authorizedID: this.registrationNumber,
+      _csrf: this.csrf || '',
+    });
+
+    return parseGradesHTML(html, semesterId);
   }
 
   async getExamSchedule(semesterId: string): Promise<ExamScheduleData> {

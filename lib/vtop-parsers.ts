@@ -1,8 +1,10 @@
 /**
  * HTML parsing functions for VTOP responses.
  * Separates parsing logic from the HTTP client for maintainability.
+ * Uses cheerio for robust HTML parsing.
  */
 
+import * as cheerio from 'cheerio';
 import type {
   AttendanceData,
   AttendanceEntry,
@@ -446,101 +448,121 @@ export function parseCoursePageHTML(html: string): CoursePageData {
 }
 
 export function parseMarksHTML(html: string, semesterId: string): MarksData {
+  const $ = cheerio.load(html);
   const courses: MarksData['courses'] = [];
 
-  html = normalizeHtml(html);
+  // Extract semester name from dropdown
+  const selectedOption = $('select#semesterSubId option[selected]').last();
+  const semesterName = selectedOption.text().trim() || '';
 
-  const semesterNameMatch = html.match(/(?:Winter|Fall|Summer)\s+Semester\s+\d{4}-\d{2}/i);
-  const semesterName = semesterNameMatch ? semesterNameMatch[0] : '';
+  // Find main table - look for table with course data
+  const mainTable = $('table.customTable').first();
 
-  const tbodyMatch = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
-  if (!tbodyMatch) {
-    return { semesterId, semesterName, courses };
-  }
+  // Get all rows from the main table
+  const rows = mainTable.find('> tr, > tbody > tr');
 
-  const rows = tbodyMatch[1].split('</tr>').filter(r => r.includes('<tr'));
-  let currentCourse: MarksData['courses'][0] | null = null;
+  rows.each((index, row) => {
+    const $row = $(row);
 
-  for (const rowHtml of rows) {
-    const row = rowHtml + '</tr>';
-    const cellMatches = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)];
-    const cells = cellMatches.map(m => cleanText(m[1]));
+    // Skip header rows
+    if ($row.hasClass('tableHeader')) return;
 
-    if (cells.length < 8) continue;
+    // Check if this is a course info row (has direct td children with course data)
+    const cells = $row.find('> td');
+    if (cells.length >= 7 && !$row.find('table').length) {
+      // This is a course header row
+      const courseCode = $(cells[2]).text().trim();
+      const courseName = $(cells[3]).text().trim();
+      const courseTypeRaw = $(cells[4]).text().trim();
+      const faculty = $(cells[6]).text().trim();
 
-    const courseCode = cells[1] || '';
-    const courseTitle = cells[2] || '';
+      // Skip if it looks like a header
+      if (courseCode.toLowerCase().includes('code')) return;
 
-    if (courseCode.toLowerCase().includes('code') || courseTitle.toLowerCase().includes('title')) continue;
-    if (!courseCode || courseCode.length < 3) continue;
+      // Map course type
+      let classType: 'ETH' | 'ELA' | 'EPJ' | 'TH' = 'TH';
+      const ctLower = courseTypeRaw.toLowerCase();
+      if (ctLower.includes('embedded theory')) classType = 'ETH';
+      else if (ctLower.includes('embedded lab') || ctLower.includes('lab only')) classType = 'ELA';
+      else if (ctLower.includes('project')) classType = 'EPJ';
 
-    if (!currentCourse || currentCourse.courseCode !== courseCode) {
-      if (currentCourse) {
-        courses.push(currentCourse);
+      // Find the next row which contains the marks table
+      const nextRow = $row.next('tr');
+      const marksTable = nextRow.find('table.customTable-level1');
+
+      const marks: MarksData['courses'][0]['marks'] = [];
+      let totalWeightedScore = 0;
+
+      if (marksTable.length) {
+        marksTable.find('tr.tableContent-level1').each((_, markRow) => {
+          const markCells = $(markRow).find('td');
+          if (markCells.length >= 7) {
+            const examName = $(markCells[1]).text().trim();
+            const maxMarks = parseFloat($(markCells[2]).text().trim()) || 0;
+            const weightage = parseFloat($(markCells[3]).text().trim()) || 0;
+            const statusText = $(markCells[4]).text().trim();
+            const scoredMarksStr = $(markCells[5]).text().trim();
+
+            // Skip header rows
+            if (examName.toLowerCase().includes('mark title')) return;
+
+            let status: 'graded' | 'pending' | 'absent' = 'pending';
+            let scoredMarks: number | null = null;
+
+            if (statusText.toLowerCase().includes('absent')) {
+              status = 'absent';
+              scoredMarks = 0;
+            } else if (statusText.toLowerCase().includes('present')) {
+              status = 'graded';
+              scoredMarks = parseFloat(scoredMarksStr);
+              if (isNaN(scoredMarks)) scoredMarks = null;
+            }
+
+            // Determine exam type
+            let examType: MarksData['courses'][0]['marks'][0]['examType'] = 'DA';
+            const examLower = examName.toLowerCase();
+            if (examLower.includes('continuous assessment test') && examLower.includes('- i')) {
+              examType = 'CAT1';
+            } else if (examLower.includes('continuous assessment test') && examLower.includes('- ii')) {
+              examType = 'CAT2';
+            } else if (examLower.includes('final assessment')) {
+              examType = 'FAT';
+            } else if (examLower.includes('quiz')) {
+              examType = 'QUIZ';
+            } else if (examLower.includes('project')) {
+              examType = 'PROJECT';
+            }
+
+            if (examName && maxMarks > 0) {
+              marks.push({
+                examType,
+                examName,
+                maxMarks,
+                scoredMarks,
+                weightage,
+                status,
+              });
+
+              if (scoredMarks !== null && maxMarks > 0) {
+                totalWeightedScore += (scoredMarks / maxMarks) * weightage;
+              }
+            }
+          }
+        });
       }
 
-      const classTypeRaw = (cells[3] || 'TH').toUpperCase();
-      const classType = (['ETH', 'ELA', 'EPJ', 'TH'].includes(classTypeRaw) ? classTypeRaw : 'TH') as 'ETH' | 'ELA' | 'EPJ' | 'TH';
-
-      currentCourse = {
-        courseCode,
-        courseName: courseTitle,
-        classType,
-        faculty: cells[5] || '',
-        marks: [],
-        totalWeightedScore: 0,
-      };
-    }
-
-    const assessmentName = cells[6] || cells[4] || '';
-    const maxMarksStr = cells[7] || cells[5] || '0';
-    const weightageStr = cells[8] || cells[6] || '0';
-    const statusOrScore = cells[10] || cells[11] || cells[9] || '';
-    const scoredMarksStr = cells[11] || cells[10] || cells[8] || '';
-
-    const maxMarks = parseFloat(maxMarksStr) || 0;
-    const weightage = parseFloat(weightageStr) || 0;
-
-    let status: 'graded' | 'pending' | 'absent' = 'pending';
-    let scoredMarks: number | null = null;
-
-    if (statusOrScore.toLowerCase().includes('absent')) {
-      status = 'absent';
-      scoredMarks = 0;
-    } else if (statusOrScore.toLowerCase().includes('present') || !isNaN(parseFloat(scoredMarksStr))) {
-      status = 'graded';
-      scoredMarks = parseFloat(scoredMarksStr);
-      if (isNaN(scoredMarks)) scoredMarks = null;
-    }
-
-    let examType: MarksData['courses'][0]['marks'][0]['examType'] = 'DA';
-    const assessmentLower = assessmentName.toLowerCase();
-    if (assessmentLower.includes('cat') && assessmentLower.includes('1')) examType = 'CAT1';
-    else if (assessmentLower.includes('cat') && assessmentLower.includes('2')) examType = 'CAT2';
-    else if (assessmentLower.includes('fat') || assessmentLower.includes('final')) examType = 'FAT';
-    else if (assessmentLower.includes('quiz')) examType = 'QUIZ';
-    else if (assessmentLower.includes('lab')) examType = 'LAB';
-    else if (assessmentLower.includes('project')) examType = 'PROJECT';
-
-    if (assessmentName && maxMarks > 0) {
-      currentCourse.marks.push({
-        examType,
-        examName: assessmentName,
-        maxMarks,
-        scoredMarks,
-        weightage,
-        status,
-      });
-
-      if (scoredMarks !== null && maxMarks > 0) {
-        currentCourse.totalWeightedScore += (scoredMarks / maxMarks) * weightage;
+      if (courseCode && courseCode.length >= 3) {
+        courses.push({
+          courseCode,
+          courseName,
+          classType,
+          faculty,
+          marks,
+          totalWeightedScore,
+        });
       }
     }
-  }
-
-  if (currentCourse) {
-    courses.push(currentCourse);
-  }
+  });
 
   return { semesterId, semesterName, courses };
 }
@@ -549,147 +571,149 @@ const GRADE_POINTS: Record<string, number> = {
   'S': 10, 'A': 9, 'B': 8, 'C': 7, 'D': 6, 'E': 5, 'F': 0, 'N': 0, 'W': 0,
 };
 
-export function parseGradesHTML(html: string): GradesData {
+export function parseGradesHTML(html: string, semesterId?: string): GradesData {
+  const $ = cheerio.load(html);
   const semesters: GradesData['semesters'] = [];
+
+  // Check for "No Records Found"
+  if (html.toLowerCase().includes('no records found') || html.toLowerCase().includes('no record found')) {
+    return {
+      semesters: [],
+      cgpa: 0,
+      totalCreditsEarned: 0,
+      totalCreditsRegistered: 0,
+    };
+  }
+
+  // Get semester name from dropdown
+  const selectedOption = $('select#semesterSubId option[selected]').last();
+  const semesterName = selectedOption.text().trim() || '';
+
+  const courses: GradesData['semesters'][0]['courses'] = [];
+  let semesterCreditsRegistered = 0;
+  let semesterCreditsEarned = 0;
+  let semesterGradePoints = 0;
+  let sgpa = 0;
   let cgpa = 0;
-  let totalCreditsEarned = 0;
-  let totalCreditsRegistered = 0;
 
-  html = normalizeHtml(html);
+  // VTOP grades table structure:
+  // Col 0: Sl.No.
+  // Col 1: Course Code
+  // Col 2: Course Title
+  // Col 3: Course Type (e.g., "Embedded Theory and Lab", "Lab Only", "Online Course")
+  // Col 4: L (Lecture credits)
+  // Col 5: P (Practical credits)
+  // Col 6: J (Project credits)
+  // Col 7: C (Total Credits) - THIS IS THE ONE WE NEED
+  // Col 8: Grading Type
+  // Col 9: Grand Total (percentage)
+  // Col 10: Grade
+  // Col 11: View Mark (button)
 
-  const cgpaMatch = html.match(/CGPA[:\s]*([0-9.]+)/i) ||
-                    html.match(/Cumulative[^<]*GPA[:\s]*([0-9.]+)/i);
-  if (cgpaMatch) {
-    cgpa = parseFloat(cgpaMatch[1]) || 0;
-  }
+  // Find all table rows
+  $('table tr').each((_, row) => {
+    const $row = $(row);
+    const cells = $row.find('td');
 
-  const totalRegisteredMatch = html.match(/(?:Total\s+)?Credits?\s+Registered[:\s]*(\d+)/i);
-  const totalEarnedMatch = html.match(/(?:Total\s+)?Credits?\s+Earned[:\s]*(\d+)/i);
+    // Need at least 11 cells for a valid grade row
+    if (cells.length < 11) return;
 
-  if (totalRegisteredMatch) totalCreditsRegistered = parseInt(totalRegisteredMatch[1]) || 0;
-  if (totalEarnedMatch) totalCreditsEarned = parseInt(totalEarnedMatch[1]) || 0;
+    // Extract cell values
+    const cellTexts: string[] = [];
+    cells.each((_, cell) => {
+      cellTexts.push($(cell).text().trim());
+    });
 
-  const tables = html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi);
-
-  for (const tableMatch of tables) {
-    const tableHtml = tableMatch[1];
-
-    if (!tableHtml.toLowerCase().includes('grade') && !tableHtml.toLowerCase().includes('credit')) continue;
-
-    const semesterMatch = tableHtml.match(/(?:Winter|Fall|Summer)\s+(?:Semester\s+)?(\d{4}-\d{2})/i) ||
-                          tableHtml.match(/((?:Winter|Fall|Summer)\s+\d{4})/i);
-
-    const tbodyMatch = tableHtml.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
-    if (!tbodyMatch) continue;
-
-    const rows = tbodyMatch[1].split('</tr>').filter(r => r.includes('<tr'));
-    const courses: GradesData['semesters'][0]['courses'] = [];
-    let semesterCreditsRegistered = 0;
-    let semesterCreditsEarned = 0;
-    let semesterGradePoints = 0;
-    const currentSemesterId = '';
-    let currentSemesterName = semesterMatch ? semesterMatch[1] || semesterMatch[0] : '';
-
-    for (const rowHtml of rows) {
-      const row = rowHtml + '</tr>';
-      const cellMatches = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)];
-      const cells = cellMatches.map(m => cleanText(m[1]));
-
-      if (cells.length < 4) continue;
-
-      const semesterInRow = cells.join(' ').match(/(?:Winter|Fall|Summer)\s+(?:Semester\s+)?(\d{4}-\d{2})/i);
-      if (semesterInRow && courses.length > 0) {
-        const sgpa = semesterCreditsEarned > 0 ? semesterGradePoints / semesterCreditsEarned : 0;
-        semesters.push({
-          semesterId: currentSemesterId,
-          semesterName: currentSemesterName,
-          courses: [...courses],
-          sgpa: Math.round(sgpa * 100) / 100,
-          creditsRegistered: semesterCreditsRegistered,
-          creditsEarned: semesterCreditsEarned,
-        });
-
-        courses.length = 0;
-        semesterCreditsRegistered = 0;
-        semesterCreditsEarned = 0;
-        semesterGradePoints = 0;
-        currentSemesterName = semesterInRow[1] || semesterInRow[0];
-        continue;
-      }
-
-      const courseCode = cells[0] || cells[1] || '';
-
-      if (courseCode.toLowerCase().includes('code') ||
-          courseCode.toLowerCase().includes('total') ||
-          courseCode.toLowerCase().includes('cgpa')) continue;
-
-      let grade = '';
-      let credits = 0;
-      let courseTitle = '';
-      let courseType: 'ETH' | 'ELA' | 'EPJ' | 'TH' = 'TH';
-
-      for (let i = 0; i < cells.length; i++) {
-        const cell = cells[i];
-        if (/^[SABCDEFNW]$/.test(cell)) {
-          grade = cell;
-        }
-        const num = parseFloat(cell);
-        if (!isNaN(num) && num >= 1 && num <= 10 && !credits) {
-          credits = num;
-        }
-        if (['ETH', 'ELA', 'EPJ', 'TH', 'LO'].includes(cell.toUpperCase())) {
-          courseType = cell.toUpperCase() as 'ETH' | 'ELA' | 'EPJ' | 'TH';
-        }
-        if (cell.length > 10 && cell.length > courseTitle.length && !cell.match(/^\d/)) {
-          courseTitle = cell;
-        }
-      }
-
-      if (!courseCode || courseCode.length < 3) continue;
-
-      const gradePoints = GRADE_POINTS[grade] || 0;
-
-      courses.push({
-        courseCode,
-        courseName: courseTitle || cells[1] || '',
-        classType: courseType,
-        credits,
-        grade,
-        gradePoints,
-      });
-
-      semesterCreditsRegistered += credits;
-      if (grade && grade !== 'F' && grade !== 'N' && grade !== 'W') {
-        semesterCreditsEarned += credits;
-        semesterGradePoints += credits * gradePoints;
-      }
+    // Check if this is a GPA row (contains "GPA :" or "SGPA")
+    const rowText = cellTexts.join(' ');
+    const gpaMatch = rowText.match(/(?:GPA|SGPA)\s*:\s*([0-9.]+)/i);
+    if (gpaMatch) {
+      sgpa = parseFloat(gpaMatch[1]) || 0;
+      return;
     }
 
-    if (courses.length > 0) {
-      const sgpa = semesterCreditsEarned > 0 ? semesterGradePoints / semesterCreditsEarned : 0;
-      semesters.push({
-        semesterId: currentSemesterId,
-        semesterName: currentSemesterName,
-        courses,
-        sgpa: Math.round(sgpa * 100) / 100,
-        creditsRegistered: semesterCreditsRegistered,
-        creditsEarned: semesterCreditsEarned,
-      });
+    // Skip header rows
+    const firstCell = cellTexts[0].toLowerCase();
+    if (firstCell.includes('sl') || firstCell.includes('code') || firstCell.includes('#')) {
+      return;
     }
+
+    // Column 1: Course Code (e.g., BACHY105, BCSE101)
+    const courseCode = cellTexts[1]?.toUpperCase() || '';
+    if (!courseCode || !/^[A-Z]{2,5}\d{3,4}[A-Z]?$/.test(courseCode)) {
+      return;
+    }
+
+    // Column 2: Course Title
+    const courseName = cellTexts[2] || '';
+
+    // Column 3: Course Type
+    const courseTypeRaw = cellTexts[3] || '';
+    let classType: 'ETH' | 'ELA' | 'EPJ' | 'TH' = 'TH';
+    const ctLower = courseTypeRaw.toLowerCase();
+    if (ctLower.includes('embedded theory') && ctLower.includes('lab')) {
+      classType = 'ETH';
+    } else if (ctLower.includes('lab only') || ctLower.includes('embedded lab')) {
+      classType = 'ELA';
+    } else if (ctLower.includes('project')) {
+      classType = 'EPJ';
+    } else if (ctLower.includes('theory') || ctLower.includes('online')) {
+      classType = 'TH';
+    }
+
+    // Column 7: Total Credits (C column) - This is the key fix!
+    const creditsStr = cellTexts[7] || '';
+    const credits = parseFloat(creditsStr) || 0;
+
+    // Column 10: Grade
+    const gradeStr = cellTexts[10] || '';
+    const grade = /^[SABCDEFNW]$/.test(gradeStr.toUpperCase()) ? gradeStr.toUpperCase() : '';
+
+    const gradePointValue = GRADE_POINTS[grade] || 0;
+
+    courses.push({
+      courseCode,
+      courseName,
+      classType,
+      credits,
+      grade,
+      gradePoints: gradePointValue,
+    });
+
+    semesterCreditsRegistered += credits;
+    if (grade && grade !== 'F' && grade !== 'N' && grade !== 'W') {
+      semesterCreditsEarned += credits;
+      semesterGradePoints += credits * gradePointValue;
+    }
+  });
+
+  // Calculate SGPA from data if not found in page
+  if (!sgpa && semesterCreditsEarned > 0) {
+    sgpa = Math.round((semesterGradePoints / semesterCreditsEarned) * 100) / 100;
   }
 
-  if (totalCreditsRegistered === 0) {
-    totalCreditsRegistered = semesters.reduce((sum, s) => sum + s.creditsRegistered, 0);
-  }
-  if (totalCreditsEarned === 0) {
-    totalCreditsEarned = semesters.reduce((sum, s) => sum + s.creditsEarned, 0);
-  }
-  if (cgpa === 0 && semesters.length > 0) {
-    const totalPoints = semesters.reduce((sum, s) => sum + (s.sgpa * s.creditsEarned), 0);
-    cgpa = totalCreditsEarned > 0 ? Math.round((totalPoints / totalCreditsEarned) * 100) / 100 : 0;
+  // Try to find CGPA in page text
+  const pageText = $.text();
+  const cgpaMatch = pageText.match(/CGPA[:\s]*([0-9.]+)/i);
+  if (cgpaMatch) cgpa = parseFloat(cgpaMatch[1]) || 0;
+
+  if (courses.length > 0) {
+    semesters.push({
+      semesterId: semesterId || '',
+      semesterName,
+      courses,
+      sgpa,
+      creditsRegistered: semesterCreditsRegistered,
+      creditsEarned: semesterCreditsEarned,
+    });
   }
 
-  return { semesters, cgpa, totalCreditsEarned, totalCreditsRegistered };
+  return {
+    semesters,
+    cgpa,
+    totalCreditsEarned: semesterCreditsEarned,
+    totalCreditsRegistered: semesterCreditsRegistered,
+  };
 }
 
 export function parseExamScheduleHTML(html: string, semesterId: string): ExamScheduleData {
