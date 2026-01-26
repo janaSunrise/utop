@@ -11,13 +11,6 @@ export async function GET() {
     const { captcha, jsessionid, serverId } = await VTOPClient.getCaptcha();
     const cookieStore = await cookies();
 
-    console.log('[Captcha] Setting session cookies:', {
-      jsessionidPrefix: jsessionid.substring(0, 15),
-      csrfPrefix: captcha.csrf.substring(0, 15),
-      serverId,
-    });
-
-    // Cookie options - must be consistent for Firefox compatibility
     const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -28,8 +21,6 @@ export async function GET() {
 
     cookieStore.set(TEMP_SESSION_COOKIE, jsessionid, cookieOptions);
     cookieStore.set(TEMP_CSRF_COOKIE, captcha.csrf, cookieOptions);
-
-    // Store serverId for load balancer stickiness (even if null, set empty string)
     cookieStore.set(TEMP_SERVER_COOKIE, serverId || '', cookieOptions);
 
     return NextResponse.json({

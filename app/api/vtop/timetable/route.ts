@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { withAuthenticatedClient, apiSuccess, apiError, requireQueryParam } from '@/lib/api-utils';
+import { withAuthenticatedClient, apiSuccess, requireQueryParam } from '@/lib/api-utils';
 
 /**
  * GET /api/vtop/timetable?semesterId=VL20252601

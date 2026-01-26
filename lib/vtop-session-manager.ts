@@ -2,11 +2,6 @@ import { VTOPClient } from './vtop-client';
 import { getSession, setSession, clearSession } from './session';
 import { cookies } from 'next/headers';
 
-/**
- * Global VTOP session manager.
- * Handles session validation, automatic refresh, and provides a consistent client interface.
- */
-
 // In-memory cache of recent session validations to avoid repeated VTOP calls
 const sessionValidationCache = new Map<string, { valid: boolean; timestamp: number }>();
 const VALIDATION_CACHE_TTL = 30_000; // 30 seconds
@@ -109,12 +104,11 @@ export async function loginAndGetClient(
   const finalCsrf = loginResult.newCsrf || csrf;
   const finalServerId = loginResult.newServerId || serverId || undefined;
 
-  // Create client to fetch profile
   let registrationNumber = loginResult.user?.registrationNumber || '';
   const client = new VTOPClient(
     finalSessionId,
     finalCsrf,
-    registrationNumber || username, // Temporary - will update after profile fetch
+    registrationNumber || username,
     { username, password },
     finalServerId
   );
@@ -126,16 +120,14 @@ export async function loginAndGetClient(
       registrationNumber = profile.personal.registrationNumber;
       client.setRegistrationNumber(registrationNumber);
     }
-  } catch (e) {
-    console.log('[SessionManager] Could not fetch profile:', e);
+  } catch {
+    // Profile fetch failed, continue with what we have
   }
 
-  // If still no registration number, use username
   if (!registrationNumber) {
     registrationNumber = username;
   }
 
-  // Store session
   const cookieStore = await cookies();
   await setSession(
     finalSessionId,
@@ -149,12 +141,6 @@ export async function loginAndGetClient(
     cookieStore,
     finalServerId
   );
-
-  console.log('[SessionManager] Session stored:', {
-    jsessionidPrefix: finalSessionId.substring(0, 10),
-    serverId: finalServerId,
-    registrationNumber,
-  });
 
   return {
     client,
@@ -175,7 +161,7 @@ export function isSessionLikelyValid(jsessionid: string): boolean {
   if (cached && Date.now() - cached.timestamp < VALIDATION_CACHE_TTL) {
     return cached.valid;
   }
-  return true; // Assume valid if not in cache
+  return true;
 }
 
 /**

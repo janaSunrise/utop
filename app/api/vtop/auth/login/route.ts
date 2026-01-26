@@ -33,21 +33,6 @@ export async function POST(request: NextRequest) {
     const tempCsrf = cookieStore.get(TEMP_CSRF_COOKIE)?.value;
     const tempServer = cookieStore.get(TEMP_SERVER_COOKIE)?.value;
 
-    // Log all cookies for debugging
-    const allCookies = cookieStore.getAll();
-    console.log('[Login] All cookies received:', allCookies.map(c => c.name));
-    console.log('[Login] Received temp cookies:', {
-      hasSession: !!tempSession,
-      sessionPrefix: tempSession?.substring(0, 15),
-      sessionFull: tempSession,
-      hasCsrf: !!tempCsrf,
-      csrfPrefix: tempCsrf?.substring(0, 15),
-      csrfFull: tempCsrf,
-      hasServer: !!tempServer,
-      server: tempServer,
-      captchaFromUser: captcha,
-    });
-
     if (!tempSession || !tempCsrf) {
       return NextResponse.json(
         {
@@ -70,46 +55,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use new session ID if VTOP issued one (session fixation prevention)
     const finalSessionId = loginResult.newSessionId || tempSession;
     const finalCsrf = loginResult.newCsrf || tempCsrf;
     const finalServerId = loginResult.newServerId || tempServer;
     let registrationNumber = loginResult.user?.registrationNumber || '';
 
-    console.log('[Login] Initial registrationNumber from login:', registrationNumber);
-
-    // If no registration number found, use username as authorizedID
-    // VTOP APIs may accept username for authorizedID parameter
+    // Use username as authorizedID if no registration number found
     if (!registrationNumber) {
-      console.log('[Login] No registration number found, using username as authorizedID');
       registrationNumber = username;
     }
 
-    // Immediately fetch profile while session is active
-    // VTOP sessions expire very quickly, so we must fetch data RIGHT NOW
+    // Fetch profile while session is active (VTOP sessions expire quickly)
     let profileData = null;
-    let profileFetchError = null;
     try {
-      console.log('[Login] Fetching profile with:', {
-        jsessionidPrefix: finalSessionId?.substring(0, 10),
-        csrf: finalCsrf?.substring(0, 10),
-        serverId: finalServerId,
-        registrationNumber,
-      });
       const client = new VTOPClient(finalSessionId, finalCsrf, registrationNumber, undefined, finalServerId);
       profileData = await client.getProfile();
-      console.log('[Login] Profile fetch SUCCESS, got data:', !!profileData);
-      // Try to extract registration number from profile if we used username
       if (profileData?.personal?.registrationNumber) {
         registrationNumber = profileData.personal.registrationNumber;
-        console.log('[Login] Got registrationNumber from profile:', registrationNumber);
       }
     } catch (e) {
-      profileFetchError = e instanceof Error ? e.message : 'Unknown error';
-      console.log('[Login] Profile fetch FAILED:', profileFetchError);
-
       // If profile fetch failed with SESSION_EXPIRED, the session is already dead
-      if (profileFetchError === 'SESSION_EXPIRED') {
+      if (e instanceof Error && e.message === 'SESSION_EXPIRED') {
         return NextResponse.json({
           success: false,
           error: {
@@ -120,7 +86,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Store session with credentials for future re-authentication
     await setSession(
       finalSessionId,
       finalCsrf,
@@ -139,12 +104,6 @@ export async function POST(request: NextRequest) {
     cookieStore.delete(TEMP_CSRF_COOKIE);
     cookieStore.delete(TEMP_SERVER_COOKIE);
 
-    console.log('[Login] Storing session:', {
-      jsessionidPrefix: finalSessionId?.substring(0, 10),
-      serverId: finalServerId,
-      registrationNumber,
-    });
-
     return NextResponse.json({
       success: true,
       data: {
@@ -152,7 +111,6 @@ export async function POST(request: NextRequest) {
           name: loginResult.user?.name || loginResult.user?.registrationNumber || username,
           registrationNumber,
         },
-        // Include profile data if we managed to fetch it
         profile: profileData,
       },
     });

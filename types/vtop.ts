@@ -1,11 +1,7 @@
-// VTOP API Type Definitions
-
-// ============================================================================
 // Authentication Types
-// ============================================================================
 
 export interface CaptchaResponse {
-  captchaImage: string; // Base64 encoded JPEG
+  captchaImage: string;
   csrf: string;
 }
 
@@ -31,9 +27,7 @@ export interface SessionInfo {
   isValid: boolean;
 }
 
-// ============================================================================
 // Dashboard Types
-// ============================================================================
 
 export interface DashboardCGPA {
   cgpa: number;
@@ -44,7 +38,7 @@ export interface DashboardCGPA {
 export interface DashboardCourse {
   courseCode: string;
   courseName: string;
-  classType: 'ETH' | 'ELA' | 'EPJ' | 'SS' | 'TH'; // Theory, Lab, Project, Soft Skills
+  classType: 'ETH' | 'ELA' | 'EPJ' | 'SS' | 'TH';
   faculty: string;
   slot: string;
   venue: string;
@@ -78,9 +72,7 @@ export interface DashboardData {
   scheduledEvents: ScheduledEvent[];
 }
 
-// ============================================================================
 // Attendance Types
-// ============================================================================
 
 export interface AttendanceEntry {
   courseCode: string;
@@ -105,17 +97,15 @@ export interface AttendanceInsight {
   courseCode: string;
   classesNeededFor75: number;
   classesNeededFor85: number;
-  canSkip: number; // How many classes can be skipped while maintaining 75%
+  canSkip: number;
 }
 
-// ============================================================================
 // Timetable Types
-// ============================================================================
 
 export type DayOfWeek = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
 
 export interface TimetableSlot {
-  startTime: string; // HH:MM format
+  startTime: string;
   endTime: string;
   courseCode: string;
   courseName: string;
@@ -136,9 +126,7 @@ export interface TimetableData {
   days: TimetableDay[];
 }
 
-// ============================================================================
 // Curriculum Types
-// ============================================================================
 
 export type CurriculumCategory = 'NC' | 'UCC' | 'PCC' | 'CON' | 'OEC' | 'PMT' | 'UE';
 
@@ -167,9 +155,7 @@ export interface CurriculumData {
   categories: CurriculumCategoryData[];
 }
 
-// ============================================================================
 // Course Page Types
-// ============================================================================
 
 export interface SyllabusModule {
   moduleNumber: number;
@@ -208,9 +194,7 @@ export interface CoursePageData {
   materials: CourseMaterial[];
 }
 
-// ============================================================================
 // Marks Types
-// ============================================================================
 
 export type ExamType = 'CAT1' | 'CAT2' | 'FAT' | 'DA' | 'QUIZ' | 'LAB' | 'PROJECT';
 
@@ -218,7 +202,7 @@ export interface ExamMark {
   examType: ExamType;
   examName: string;
   maxMarks: number;
-  scoredMarks: number | null; // null if not yet graded
+  scoredMarks: number | null;
   weightage: number;
   status: 'graded' | 'pending' | 'absent';
 }
@@ -238,9 +222,7 @@ export interface MarksData {
   courses: CourseMarks[];
 }
 
-// ============================================================================
 // Grades Types
-// ============================================================================
 
 export interface CourseGrade {
   courseCode: string;
@@ -267,9 +249,7 @@ export interface GradesData {
   totalCreditsRegistered: number;
 }
 
-// ============================================================================
 // Exam Schedule Types
-// ============================================================================
 
 export type ExamCategory = 'CAT1' | 'CAT2' | 'FAT';
 
@@ -280,7 +260,7 @@ export interface ExamSlot {
   slot: string;
   examDate: string;
   day: string;
-  session: 'FN' | 'AN'; // Forenoon or Afternoon
+  session: 'FN' | 'AN';
   time: string;
   venue: string;
   seatNumber?: string;
@@ -296,9 +276,7 @@ export interface ExamScheduleData {
   }[];
 }
 
-// ============================================================================
 // Profile Types
-// ============================================================================
 
 export interface PersonalInfo {
   name: string;
@@ -358,9 +336,7 @@ export interface ProfileData {
   photoUrl?: string;
 }
 
-// ============================================================================
 // Credentials Types
-// ============================================================================
 
 export interface CredentialDocument {
   type: string;
@@ -375,19 +351,15 @@ export interface CredentialsData {
   documents: CredentialDocument[];
 }
 
-// ============================================================================
 // Semester Types
-// ============================================================================
 
 export interface Semester {
-  id: string; // e.g., "VL2025261"
-  name: string; // e.g., "Winter 2025-26"
+  id: string;
+  name: string;
   isCurrent: boolean;
 }
 
-// ============================================================================
-// API Response Wrapper Types
-// ============================================================================
+// API Response Types
 
 export interface ApiResponse<T> {
   success: boolean;
