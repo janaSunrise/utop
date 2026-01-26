@@ -4,27 +4,33 @@ import { cookies } from 'next/headers';
 
 const TEMP_SESSION_COOKIE = 'vtop_temp_session';
 const TEMP_CSRF_COOKIE = 'vtop_temp_csrf';
+const TEMP_SERVER_COOKIE = 'vtop_temp_server';
 
 export async function GET() {
   try {
-    const { captcha, jsessionid } = await VTOPClient.getCaptcha();
+    const { captcha, jsessionid, serverId } = await VTOPClient.getCaptcha();
     const cookieStore = await cookies();
 
-    cookieStore.set(TEMP_SESSION_COOKIE, jsessionid, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 5, // 5 minutes - CAPTCHA expires quickly
+    console.log('[Captcha] Setting session cookies:', {
+      jsessionidPrefix: jsessionid.substring(0, 15),
+      csrfPrefix: captcha.csrf.substring(0, 15),
+      serverId,
     });
 
-    cookieStore.set(TEMP_CSRF_COOKIE, captcha.csrf, {
+    // Cookie options - must be consistent for Firefox compatibility
+    const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'lax' as const,
       path: '/',
-      maxAge: 60 * 5,
-    });
+      maxAge: 60 * 5, // 5 minutes - CAPTCHA expires quickly
+    };
+
+    cookieStore.set(TEMP_SESSION_COOKIE, jsessionid, cookieOptions);
+    cookieStore.set(TEMP_CSRF_COOKIE, captcha.csrf, cookieOptions);
+
+    // Store serverId for load balancer stickiness (even if null, set empty string)
+    cookieStore.set(TEMP_SERVER_COOKIE, serverId || '', cookieOptions);
 
     return NextResponse.json({
       success: true,

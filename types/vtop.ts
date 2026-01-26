@@ -44,7 +44,7 @@ export interface DashboardCGPA {
 export interface DashboardCourse {
   courseCode: string;
   courseName: string;
-  classType: 'ETH' | 'ELA' | 'EPJ' | 'SS'; // Theory, Lab, Project, Soft Skills
+  classType: 'ETH' | 'ELA' | 'EPJ' | 'SS' | 'TH'; // Theory, Lab, Project, Soft Skills
   faculty: string;
   slot: string;
   venue: string;
@@ -85,7 +85,7 @@ export interface DashboardData {
 export interface AttendanceEntry {
   courseCode: string;
   courseName: string;
-  classType: 'ETH' | 'ELA' | 'EPJ' | 'SS';
+  classType: 'ETH' | 'ELA' | 'EPJ' | 'SS' | 'TH';
   slot: string;
   faculty: string;
   attendedClasses: number;
@@ -119,7 +119,7 @@ export interface TimetableSlot {
   endTime: string;
   courseCode: string;
   courseName: string;
-  classType: 'ETH' | 'ELA' | 'EPJ' | 'SS';
+  classType: 'ETH' | 'ELA' | 'EPJ' | 'SS' | 'TH';
   faculty: string;
   venue: string;
   slot: string;
@@ -226,7 +226,7 @@ export interface ExamMark {
 export interface CourseMarks {
   courseCode: string;
   courseName: string;
-  classType: 'ETH' | 'ELA' | 'EPJ';
+  classType: 'ETH' | 'ELA' | 'EPJ' | 'TH';
   faculty: string;
   marks: ExamMark[];
   totalWeightedScore: number;
@@ -245,7 +245,7 @@ export interface MarksData {
 export interface CourseGrade {
   courseCode: string;
   courseName: string;
-  classType: 'ETH' | 'ELA' | 'EPJ';
+  classType: 'ETH' | 'ELA' | 'EPJ' | 'TH';
   credits: number;
   grade: string;
   gradePoints: number;
@@ -265,6 +265,35 @@ export interface GradesData {
   cgpa: number;
   totalCreditsEarned: number;
   totalCreditsRegistered: number;
+}
+
+// ============================================================================
+// Exam Schedule Types
+// ============================================================================
+
+export type ExamCategory = 'CAT1' | 'CAT2' | 'FAT';
+
+export interface ExamSlot {
+  courseCode: string;
+  courseName: string;
+  courseType: 'ETH' | 'ELA' | 'EPJ' | 'TH';
+  slot: string;
+  examDate: string;
+  day: string;
+  session: 'FN' | 'AN'; // Forenoon or Afternoon
+  time: string;
+  venue: string;
+  seatNumber?: string;
+}
+
+export interface ExamScheduleData {
+  semesterId: string;
+  semesterName: string;
+  exams: {
+    category: ExamCategory;
+    categoryName: string;
+    slots: ExamSlot[];
+  }[];
 }
 
 // ============================================================================

@@ -1,25 +1,10 @@
-import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-
-// Get user info from cookies
-async function getUserInfo() {
-  const cookieStore = await cookies();
-  const userInfoStr = cookieStore.get('vtop_user')?.value;
-
-  if (userInfoStr) {
-    try {
-      return JSON.parse(decodeURIComponent(userInfoStr));
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
+import { getClientUserInfo } from '@/lib/session';
 
 export default async function DashboardPage() {
-  const user = await getUserInfo();
+  const user = await getClientUserInfo();
 
   return (
     <div className="min-h-screen bg-background">
@@ -28,9 +13,9 @@ export default async function DashboardPage() {
         <div className="container mx-auto px-4 h-14 flex items-center justify-between">
           <h1 className="text-lg font-semibold">UTop</h1>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">
-              {user?.name || 'Student'}
-            </span>
+            <p className="text-sm font-medium font-mono">
+              {user?.registrationNumber || 'Student'}
+            </p>
             <LogoutButton />
           </div>
         </div>
@@ -39,9 +24,7 @@ export default async function DashboardPage() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Welcome back{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
-          </h2>
+          <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
           <p className="text-muted-foreground mt-1">
             Here&apos;s an overview of your academic progress
           </p>

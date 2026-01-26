@@ -55,6 +55,13 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (data.success) {
+        // Cache profile data from login response (VTOP sessions expire quickly)
+        if (data.data?.profile) {
+          localStorage.setItem('vtop_profile', JSON.stringify(data.data.profile));
+        }
+        if (data.data?.user) {
+          localStorage.setItem('vtop_user', JSON.stringify(data.data.user));
+        }
         router.push('/');
         router.refresh();
       } else {
@@ -102,12 +109,12 @@ export default function LoginPage() {
 
               <div className="space-y-1.5">
                 <label htmlFor="username" className="text-sm font-medium text-foreground">
-                  Registration Number
+                  Username
                 </label>
                 <Input
                   id="username"
                   type="text"
-                  placeholder="21BCE1234"
+                  placeholder="e.g. SUNRITJANA"
                   value={username}
                   onChange={(e) => setUsername(e.target.value.toUpperCase())}
                   autoComplete="username"
@@ -115,6 +122,9 @@ export default function LoginPage() {
                   required
                   disabled={isLoading}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Your VTOP login ID, not registration number
+                </p>
               </div>
 
               <div className="space-y-1.5">
