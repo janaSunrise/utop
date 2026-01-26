@@ -587,7 +587,7 @@ export function parseGradesHTML(html: string): GradesData {
     let semesterCreditsRegistered = 0;
     let semesterCreditsEarned = 0;
     let semesterGradePoints = 0;
-    let currentSemesterId = '';
+    const currentSemesterId = '';
     let currentSemesterName = semesterMatch ? semesterMatch[1] || semesterMatch[0] : '';
 
     for (const rowHtml of rows) {
@@ -804,61 +804,176 @@ export function parseExamScheduleHTML(html: string, semesterId: string): ExamSch
 }
 
 export function parseProfileHTML(html: string): ProfileData {
-  const extractTableField = (label: string): string => {
-    const patterns = [
-      new RegExp(`<td[^>]*>${label}</td>\\s*<td[^>]*>([^<]*)`, 'i'),
-      new RegExp(`<td[^>]*>${label.replace(/['\s]/g, '[^>]*')}</td>\\s*<td[^>]*>([^<]*)`, 'i'),
-      new RegExp(`<td[^>]*>${label}</td>\\s*<td[^>]*colspan[^>]*>([^<]*)`, 'i'),
-    ];
+  const DEBUG = process.env.VTOP_DEBUG === 'true';
 
-    for (const pattern of patterns) {
-      const match = html.match(pattern);
-      if (match && match[1]) {
-        const value = match[1].replace(/&nbsp;/g, ' ').trim();
-        if (value && value !== '-' && value !== 'N/A' && value !== 'NIL') return value;
+  // Helper to extract field value from HTML using multiple patterns
+  const extractField = (searchHtml: string, labels: string[]): string => {
+    for (const label of labels) {
+      const patterns = [
+        // Standard table format: <td>LABEL</td><td>VALUE</td>
+        new RegExp(`<td[^>]*>\\s*${label}\\s*</td>\\s*<td[^>]*>\\s*([^<]+)`, 'i'),
+        // With colspan
+        new RegExp(`<td[^>]*>\\s*${label}\\s*</td>\\s*<td[^>]*colspan[^>]*>\\s*([^<]+)`, 'i'),
+        // th/td format
+        new RegExp(`<th[^>]*>\\s*${label}\\s*</th>\\s*<td[^>]*>\\s*([^<]+)`, 'i'),
+        // Label/value in divs or spans
+        new RegExp(`${label}[:\\s]*</(?:label|span|div|td|th)>\\s*<(?:label|span|div|td)[^>]*>\\s*([^<]+)`, 'i'),
+        // Colon separated inline (be more specific to avoid header matches)
+        new RegExp(`>${label}\\s*:\\s*</[^>]+>\\s*<[^>]+>\\s*([^<]+)`, 'i'),
+      ];
+
+      for (const pattern of patterns) {
+        const match = searchHtml.match(pattern);
+        if (match && match[1]) {
+          const value = cleanText(match[1]);
+          // Filter out section headers and invalid values
+          if (value &&
+              value !== '-' &&
+              value !== 'N/A' &&
+              value !== 'NIL' &&
+              value !== 'null' &&
+              value.length > 0 &&
+              value.length < 200 && // Reasonable length limit
+              !value.toUpperCase().includes('INFORMATION') &&
+              !value.toUpperCase().includes('DETAILS') &&
+              !value.toUpperCase().includes('SECTION') &&
+              !/^\s*$/.test(value)) {
+            return value;
+          }
+        }
       }
     }
     return '';
   };
 
-  const regNoMatch = html.match(/REGISTER\s*NUMBER[:\s]*<\/label>\s*<label[^>]*>(\d{2}[A-Z]{2,4}\d{4,5})/i) ||
+  // Find all tables/cards in the HTML and categorize them
+  const findSectionByHeader = (headers: string[]): string => {
+    for (const header of headers) {
+      // Look for card/panel with this header
+      const cardPattern = new RegExp(
+        `(?:<div[^>]*class="[^"]*card[^"]*"[^>]*>|<div[^>]*>)\\s*[\\s\\S]*?${header}[\\s\\S]*?(?=<div[^>]*class="[^"]*card|$)`,
+        'i'
+      );
+      const cardMatch = html.match(cardPattern);
+      if (cardMatch) return cardMatch[0];
+
+      // Look for table section
+      const tablePattern = new RegExp(
+        `${header}[\\s\\S]*?<table[^>]*>([\\s\\S]*?)</table>`,
+        'i'
+      );
+      const tableMatch = html.match(tablePattern);
+      if (tableMatch) return tableMatch[0];
+
+      // Generic section (header to next major header)
+      const sectionPattern = new RegExp(
+        `${header}[\\s\\S]*?(?=(?:PERSONAL|FAMILY|PARENT|PROCTOR|FACULTY\\s*ADVISOR|FA\\s*DETAILS|HOSTEL|ADDRESS)\\s*(?:INFORMATION|DETAILS)|$)`,
+        'i'
+      );
+      const sectionMatch = html.match(sectionPattern);
+      if (sectionMatch && sectionMatch[0].length > 50) return sectionMatch[0];
+    }
+    return '';
+  };
+
+  // Get sections
+  const familySection = findSectionByHeader(['FAMILY\\s*(?:INFORMATION|DETAILS)', 'PARENT[S\']?\\s*(?:INFORMATION|DETAILS)']);
+  const proctorSection = findSectionByHeader(['PROCTOR\\s*(?:INFORMATION|DETAILS)', 'FA\\s*(?:INFORMATION|DETAILS)', 'FACULTY\\s*ADVISOR\\s*(?:INFORMATION|DETAILS)']);
+  const hostelSection = findSectionByHeader(['HOSTEL\\s*(?:INFORMATION|DETAILS)']);
+  const addressSection = findSectionByHeader(['(?:PERMANENT\\s*)?ADDRESS\\s*(?:INFORMATION|DETAILS)?']);
+
+  if (DEBUG) {
+    console.log('[Profile Parser] Section lengths:', {
+      family: familySection.length,
+      proctor: proctorSection.length,
+      hostel: hostelSection.length,
+      address: addressSection.length,
+    });
+  }
+
+  // Extract registration number from header area
+  const regNoMatch = html.match(/REGISTER\s*(?:NUMBER|NO)[.:\s]*<\/label>\s*<label[^>]*>(\d{2}[A-Z]{2,4}\d{4,5})/i) ||
+                     html.match(/Registration\s*(?:Number|No)[.:\s]*(\d{2}[A-Z]{2,4}\d{4,5})/i) ||
                      html.match(/(\d{2}[A-Z]{2,4}\d{4,5})/);
   const registrationNumber = regNoMatch ? regNoMatch[1] : '';
 
+  // VIT email
   const vitEmailMatch = html.match(/VIT\s*EMAIL[:\s]*<\/label>\s*<label[^>]*>([a-zA-Z0-9._%+-]+@vitstudent\.ac\.in)/i) ||
                         html.match(/([a-zA-Z0-9._%+-]+@vitstudent\.ac\.in)/i);
   const vitEmail = vitEmailMatch ? vitEmailMatch[1] : '';
 
+  // Program and school from header
   const programMatch = html.match(/PROGRAM\s*(?:&amp;|&|AND)\s*BRANCH[:\s]*<\/label>\s*<label[^>]*>([^<]+)/i);
-  const programBranch = programMatch ? programMatch[1].trim() : '';
+  const programBranch = programMatch ? cleanText(programMatch[1]) : '';
 
-  const schoolMatch = html.match(/SCHOOL\s*NAME[:\s]*<\/label>\s*<label[^>]*>([^<]+)/i);
-  const school = schoolMatch ? schoolMatch[1].trim() : '';
+  const schoolMatch = html.match(/SCHOOL\s*(?:NAME)?[:\s]*<\/label>\s*<label[^>]*>([^<]+)/i);
+  const school = schoolMatch ? cleanText(schoolMatch[1]) : '';
 
+  // Student name from photo area or header
   const nameMatch = html.match(/<img[^>]*class="img[^>]*>[\s\S]*?<p[^>]*>([A-Z][A-Z\s]+)<\/p>/i) ||
                     html.match(/<p[^>]*style="[^"]*text-align:\s*center[^"]*font-weight:\s*bold[^"]*">([A-Z][A-Z\s]+)<\/p>/i);
   const studentName = nameMatch ? nameMatch[1].trim() : '';
 
+  // Photo
   const photoMatch = html.match(/src="(data:(?:null|image\/[^"]+);base64,[^"]+)"/i);
   const photoUrl = photoMatch ? photoMatch[1] : undefined;
 
-  const personalName = extractTableField('STUDENT NAME') || studentName;
-  const applicationNumber = extractTableField('APPLICATION NUMBER');
-  const dateOfBirth = extractTableField('DATE OF BIRTH');
-  const gender = extractTableField('GENDER');
-  const bloodGroup = extractTableField('BLOOD GROUP');
-  const mobileNumber = extractTableField('MOBILE NUMBER');
-  const nationality = extractTableField('NATIONALITY');
-  const personalEmail = extractTableField('EMAIL');
+  // Personal info extraction - search full HTML
+  const personalName = extractField(html, ['STUDENT\\s*NAME', 'NAME']) || studentName;
+  const applicationNumber = extractField(html, ['APPLICATION\\s*(?:NUMBER|NO)', 'APPL(?:ICATION)?\\s*NO']);
+  const dateOfBirth = extractField(html, ['DATE\\s*OF\\s*BIRTH', 'DOB', 'D\\.O\\.B']);
+  const gender = extractField(html, ['GENDER', 'SEX']);
+  const bloodGroup = extractField(html, ['BLOOD\\s*GROUP', 'BLOOD\\s*TYPE']);
+  const mobileNumber = extractField(html, ['MOBILE\\s*(?:NUMBER|NO)?', 'PHONE\\s*(?:NUMBER|NO)?', 'CONTACT\\s*(?:NUMBER|NO)?']);
+  const nationality = extractField(html, ['NATIONALITY', 'NATION']);
+  const personalEmail = extractField(html, ['PERSONAL\\s*EMAIL', 'EMAIL\\s*ID']);
 
-  const streetName = extractTableField('STREET NAME');
-  const areaName = extractTableField('AREA NAME');
-  const city = extractTableField('CITY');
-  const state = extractTableField('STATE');
-  const pincode = extractTableField('PINCODE');
+  // Address - search full HTML or address section
+  const searchAddr = addressSection || html;
+  const streetName = extractField(searchAddr, ['STREET\\s*(?:NAME)?']);
+  const areaName = extractField(searchAddr, ['AREA\\s*(?:NAME)?', 'LOCALITY']);
+  const city = extractField(searchAddr, ['CITY', 'TOWN']);
+  const state = extractField(searchAddr, ['STATE', 'PROVINCE']);
+  const pincode = extractField(searchAddr, ['PINCODE', 'PIN\\s*CODE', 'ZIP\\s*(?:CODE)?', 'POSTAL\\s*CODE']);
   const address = [streetName, areaName, city, state, pincode].filter(Boolean).join(', ');
 
-  const hasHostel = html.toUpperCase().includes('HOSTEL INFORMATION');
+  // Family info - Father section
+  const fatherSection = html.match(/FATHER\s*DETAILS[\s\S]*?(?=MOTHER\s*DETAILS|$)/i)?.[0] || '';
+  const fatherName = extractField(fatherSection || html, ["FATHER\\s*NAME"]);
+  const fatherOccupation = extractField(fatherSection || html, ["OCCUPATION"]);
+  const fatherPhone = extractField(fatherSection || html, ["MOBILE\\s*NUMBER"]);
+
+  // Family info - Mother section
+  const motherSection = html.match(/MOTHER\s*DETAILS[\s\S]*?(?=GUARDIAN|$)/i)?.[0] || '';
+  const motherName = motherSection ? extractField(motherSection, ["^NAME"]) : '';
+  const motherOccupation = motherSection ? extractField(motherSection, ["OCCUPATION"]) : '';
+  const motherPhone = motherSection ? extractField(motherSection, ["MOBILE\\s*NUMBER"]) : '';
+
+  const guardianName = extractField(html, ["GUARDIAN\\s*INFO"]);
+  const guardianPhone = '';
+
+  // Proctor/FA info - look for FACULTY fields in proctor section
+  const proctorName = extractField(proctorSection || html, ['FACULTY\\s*NAME']);
+  const proctorEmail = extractField(proctorSection || html, ['FACULTY\\s*EMAIL']);
+  const proctorPhone = extractField(proctorSection || html, ['FACULTY\\s*MOBILE\\s*NUMBER']);
+  const cabin = extractField(proctorSection || html, ['CABIN']);
+
+  // Hostel info - only if hostel section exists
+  const hasHostel = hostelSection.length > 50; // Must have substantial content, not just header
+
+  // Hostel fields - only extract if we have a real hostel section
+  const blockName = hasHostel ? extractField(hostelSection, ['BLOCK\\s*NAME']) : '';
+  const roomNumber = hasHostel ? extractField(hostelSection, ['ROOM\\s*NO\\.?']) : '';
+  const bedType = hasHostel ? extractField(hostelSection, ['BED\\s*TYPE']) : '';
+  // Use block name as hostel name since there's no separate field
+  const hostelName = blockName;
+
+  if (DEBUG) {
+    console.log('[Profile Parser] Extracted values:', {
+      fatherName, motherName, proctorName,
+      hostelName, roomNumber, blockName,
+    });
+  }
 
   return {
     personal: {
@@ -881,26 +996,26 @@ export function parseProfileHTML(html: string): ProfileData {
       expectedGraduation: '',
     },
     family: {
-      fatherName: extractTableField("FATHER'S NAME") || extractTableField('FATHER NAME'),
-      fatherOccupation: extractTableField("FATHER'S OCCUPATION") || undefined,
-      fatherPhone: extractTableField("FATHER'S MOBILE") || extractTableField("FATHER'S PHONE") || undefined,
-      motherName: extractTableField("MOTHER'S NAME") || extractTableField('MOTHER NAME'),
-      motherOccupation: extractTableField("MOTHER'S OCCUPATION") || undefined,
-      motherPhone: extractTableField("MOTHER'S MOBILE") || extractTableField("MOTHER'S PHONE") || undefined,
-      guardianName: extractTableField("GUARDIAN'S NAME") || extractTableField('GUARDIAN NAME') || undefined,
-      guardianPhone: extractTableField("GUARDIAN'S MOBILE") || extractTableField("GUARDIAN'S PHONE") || undefined,
+      fatherName,
+      fatherOccupation: fatherOccupation || undefined,
+      fatherPhone: fatherPhone || undefined,
+      motherName,
+      motherOccupation: motherOccupation || undefined,
+      motherPhone: motherPhone || undefined,
+      guardianName: guardianName || undefined,
+      guardianPhone: guardianPhone || undefined,
     },
     proctor: {
-      name: extractTableField('PROCTOR NAME') || extractTableField('FA NAME') || extractTableField('FACULTY ADVISOR'),
-      email: extractTableField('PROCTOR EMAIL') || extractTableField('FA EMAIL'),
-      phone: extractTableField('PROCTOR MOBILE') || extractTableField('FA MOBILE') || undefined,
-      cabin: extractTableField('CABIN') || extractTableField('CABIN NUMBER') || undefined,
+      name: proctorName,
+      email: proctorEmail,
+      phone: proctorPhone || undefined,
+      cabin: cabin || undefined,
     },
     hostel: hasHostel ? {
-      hostelName: extractTableField('HOSTEL NAME') || extractTableField('HOSTEL'),
-      roomNumber: extractTableField('ROOM NUMBER') || extractTableField('ROOM NO'),
-      blockName: extractTableField('BLOCK') || extractTableField('BLOCK NAME'),
-      bedNumber: extractTableField('BED NUMBER') || extractTableField('BED') || undefined,
+      hostelName,
+      roomNumber,
+      blockName,
+      bedNumber: bedType || undefined,
     } : undefined,
     photoUrl,
   };

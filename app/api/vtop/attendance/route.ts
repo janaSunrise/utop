@@ -1,8 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession, clearSession } from '@/lib/session';
-import { VTOPClient } from '@/lib/vtop-client';
-import { apiSuccess, apiError } from '@/lib/api-utils';
-import { VTOPError, VTOPErrorCodes, requiresReauth } from '@/lib/vtop-errors';
+import { NextRequest } from 'next/server';
+import {
+  withAuthenticatedClient,
+  apiSuccess,
+  vtopCache,
+  userCacheKey,
+  cacheOrFetch,
+} from '@/lib/api-utils';
 
 /**
  * GET /api/vtop/attendance
@@ -10,43 +13,30 @@ import { VTOPError, VTOPErrorCodes, requiresReauth } from '@/lib/vtop-errors';
  * - With semesterId: Returns attendance data for that semester
  */
 export async function GET(request: NextRequest) {
-  try {
-    const session = await getSession();
+  const semesterId = request.nextUrl.searchParams.get('semesterId');
 
-    if (!session) {
-      return apiError(VTOPErrorCodes.UNAUTHORIZED, 'Not authenticated. Please log in.', 401);
-    }
-
-    if (!session.user?.registrationNumber) {
-      return apiError(VTOPErrorCodes.MISSING_REGISTRATION, 'Registration number not found.', 400);
-    }
-
-    const client = new VTOPClient(
-      session.jsessionid,
-      session.csrf,
-      session.user.registrationNumber,
-      session.credentials,
-      session.serverId
-    );
-
-    const semesterId = request.nextUrl.searchParams.get('semesterId');
+  return withAuthenticatedClient(async ({ client, session }) => {
+    const regNo = session.user?.registrationNumber || '';
 
     // If no semesterId provided, return list of semesters
     if (!semesterId) {
-      const semesters = await client.getSemesters();
+      const cacheKey = userCacheKey(regNo, 'semesters');
+      const semesters = await cacheOrFetch(
+        vtopCache.semesters,
+        cacheKey,
+        () => client.getSemesters()
+      );
       return apiSuccess({ semesters });
     }
 
-    // Get attendance for specific semester
-    const attendance = await client.getAttendance(semesterId);
+    // Get attendance for specific semester with caching
+    const cacheKey = userCacheKey(regNo, 'attendance', semesterId);
+    const attendance = await cacheOrFetch(
+      vtopCache.attendance,
+      cacheKey,
+      () => client.getAttendance(semesterId)
+    );
+
     return apiSuccess(attendance);
-  } catch (error) {
-    const vtopError = VTOPError.from(error);
-
-    if (requiresReauth(error)) {
-      await clearSession();
-    }
-
-    return apiError(vtopError.code, vtopError.message, vtopError.httpStatus);
-  }
+  });
 }

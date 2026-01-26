@@ -7,6 +7,9 @@ import { NextResponse } from 'next/server';
 import { getSession, clearSession, type UserSession } from '@/lib/session';
 import { VTOPClient } from '@/lib/vtop-client';
 import { VTOPError, VTOPErrorCodes, requiresReauth } from '@/lib/vtop-errors';
+import { vtopCache, userCacheKey, cacheOrFetch, CacheTTL, clearUserCache } from '@/lib/cache';
+
+export { vtopCache, userCacheKey, cacheOrFetch, CacheTTL, clearUserCache };
 
 /** Standard API success response */
 export interface ApiSuccessResponse<T> {
