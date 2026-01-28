@@ -184,6 +184,47 @@ export const Icons = {
       <path d="M8 16H3v5" />
     </svg>
   ),
+
+  sparkles: (props: IconProps) => (
+    <svg {...defaultProps} {...props}>
+      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+      <path d="M5 3v4" />
+      <path d="M19 17v4" />
+      <path d="M3 5h4" />
+      <path d="M17 19h4" />
+    </svg>
+  ),
+
+  arrowRight: (props: IconProps) => (
+    <svg {...defaultProps} {...props}>
+      <path d="M5 12h14" />
+      <path d="m12 5 7 7-7 7" />
+    </svg>
+  ),
+
+  barChart: (props: IconProps) => (
+    <svg {...defaultProps} {...props}>
+      <path d="M12 20V10" />
+      <path d="M18 20V4" />
+      <path d="M6 20v-4" />
+    </svg>
+  ),
+
+  calendar: (props: IconProps) => (
+    <svg {...defaultProps} {...props}>
+      <rect width="18" height="18" x="3" y="4" rx="2" />
+      <path d="M16 2v4" />
+      <path d="M8 2v4" />
+      <path d="M3 10h18" />
+    </svg>
+  ),
+
+  user: (props: IconProps) => (
+    <svg {...defaultProps} {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M20 21a8 8 0 1 0-16 0" />
+    </svg>
+  ),
 } as const;
 
 export type IconName = keyof typeof Icons;

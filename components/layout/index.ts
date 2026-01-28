@@ -1,2 +1,2 @@
-export { Sidebar, MobileHeader, MobileBottomNav } from './sidebar';
+export { Sidebar, MobileHeader } from './sidebar';
 export { AppShell } from './app-shell';

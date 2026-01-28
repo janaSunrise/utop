@@ -1,6 +1,6 @@
 'use client';
 
-import { Sidebar, MobileHeader, MobileBottomNav } from './sidebar';
+import { Sidebar, MobileHeader } from './sidebar';
 import { CollapsedSidebar } from './collapsed-sidebar';
 
 interface AppShellProps {
@@ -11,7 +11,7 @@ interface AppShellProps {
  * Application shell with responsive sidebar layout.
  *
  * Breakpoints:
- * - Mobile (<md): Header + Bottom nav + Drawer for full menu
+ * - Mobile (<md): Header + Drawer for full menu
  * - Tablet (md-lg): Collapsed icon sidebar (w-16)
  * - Desktop (lg+): Full sidebar with labels (w-64)
  */
@@ -35,15 +35,8 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Main Content */}
       <main className="md:pl-16 lg:pl-64">
-        <div className="min-h-screen pb-20 md:pb-0">
-          {children}
-        </div>
+        {children}
       </main>
-
-      {/* Mobile Bottom Nav (<md) */}
-      <div className="md:hidden">
-        <MobileBottomNav />
-      </div>
     </div>
   );
 }

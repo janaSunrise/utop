@@ -5,6 +5,7 @@ import { AppShell } from '@/components/layout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingCards, ErrorState, EmptyState, PageHeader } from '@/components/data-states';
 import { Icons } from '@/components/icons';
+import { ProgressRing } from '@/components/ui/progress-ring';
 import { useSemesterData } from '@/hooks/use-semester-data';
 import type { MarksData, CourseMarks, ExamMark } from '@/types/vtop';
 import { cn } from '@/lib/utils';
@@ -106,7 +107,7 @@ const MarksSummary = memo(function MarksSummary({
       {/* Average Score */}
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-4">
-          <ProgressRing percentage={stats.avgWeighted} size={56} strokeWidth={5} />
+          <ProgressRing percentage={stats.avgWeighted} size={56} strokeWidth={5} thresholds={{ success: 80, warning: 60 }} />
           <div>
             <p className="text-2xl font-bold tabular-nums">{stats.avgWeighted.toFixed(1)}%</p>
             <p className="text-sm text-muted-foreground">Average Score</p>
@@ -159,51 +160,6 @@ const MarksSummary = memo(function MarksSummary({
         </div>
       </div>
     </div>
-  );
-});
-
-const ProgressRing = memo(function ProgressRing({
-  percentage,
-  size = 60,
-  strokeWidth = 5,
-}: {
-  percentage: number;
-  size?: number;
-  strokeWidth?: number;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const offset = circumference - (percentage / 100) * circumference;
-
-  const getColor = () => {
-    if (percentage >= 80) return 'stroke-success';
-    if (percentage >= 60) return 'stroke-warning';
-    return 'stroke-destructive';
-  };
-
-  return (
-    <svg width={size} height={size} className="-rotate-90">
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={strokeWidth}
-        className="text-muted/30"
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        strokeWidth={strokeWidth}
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        strokeLinecap="round"
-        className={getColor()}
-      />
-    </svg>
   );
 });
 

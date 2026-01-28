@@ -3,13 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import type { Semester } from '@/types/vtop';
+import type { Semester, ApiResponse } from '@/types/vtop';
 
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T & { semesters?: Semester[] };
-  error?: { code?: string; message?: string };
-}
+type ApiResponseWithSemesters<T> = ApiResponse<T & { semesters?: Semester[] }>;
 
 interface UseSemesterDataOptions {
   /** Endpoint for fetching semesters list */
@@ -30,7 +26,7 @@ interface UseSemesterDataReturn<T> {
   refetch: () => void;
 }
 
-async function fetchWithAuth<T>(url: string): Promise<ApiResponse<T>> {
+async function fetchWithAuth<T>(url: string): Promise<ApiResponseWithSemesters<T>> {
   const response = await fetch(url);
   return response.json();
 }

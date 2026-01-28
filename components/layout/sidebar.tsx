@@ -33,13 +33,6 @@ const navItems: NavItem[] = [
   { href: '/profile', label: 'Profile', icon: 'profile' },
 ];
 
-// Bottom nav shows only 4 quick-access items
-const mobileNavItems: NavItem[] = [
-  { href: '/', label: 'Home', icon: 'dashboard' },
-  { href: '/attendance', label: 'Attendance', icon: 'attendance' },
-  { href: '/timetable', label: 'Timetable', icon: 'timetable' },
-  { href: '/marks', label: 'Marks', icon: 'marks' },
-];
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -239,35 +232,5 @@ function DrawerSidebar({ onNavigate }: DrawerSidebarProps) {
         </form>
       </DrawerFooter>
     </div>
-  );
-}
-
-export function MobileBottomNav() {
-  const pathname = usePathname();
-
-  return (
-    <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-background">
-      <div className="flex h-16 items-center justify-around px-2">
-        {mobileNavItems.map((item) => {
-          const isActive = pathname === item.href;
-          const Icon = Icons[item.icon];
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex flex-col items-center gap-1 rounded-lg px-4 py-2 text-xs transition-colors',
-                isActive
-                  ? 'text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <Icon className={cn('size-5', isActive && 'text-primary')} />
-              <span className="font-medium">{item.label}</span>
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
   );
 }

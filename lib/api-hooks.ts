@@ -1,15 +1,11 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import type { AttendanceData, MarksData, GradesData, Semester } from '@/types/vtop';
+import type { AttendanceData, MarksData, GradesData, Semester, ApiResponse } from '@/types/vtop';
 
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T & { semesters?: Semester[] };
-  error?: { code?: string; message?: string };
-}
+type ApiResponseWithSemesters<T> = ApiResponse<T & { semesters?: Semester[] }>;
 
-async function fetchWithAuth<T>(url: string): Promise<ApiResponse<T>> {
+async function fetchWithAuth<T>(url: string): Promise<ApiResponseWithSemesters<T>> {
   const response = await fetch(url);
   return response.json();
 }

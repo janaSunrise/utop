@@ -5,6 +5,7 @@ import { AppShell } from '@/components/layout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingCards, ErrorState, EmptyState, PageHeader } from '@/components/data-states';
 import { Icons } from '@/components/icons';
+import { ProgressRing } from '@/components/ui/progress-ring';
 import { useSemesterData } from '@/hooks/use-semester-data';
 import type { AttendanceData, AttendanceEntry } from '@/types/vtop';
 import { calculateClassesNeeded, calculateClassesCanSkip } from '@/lib/vtop-client';
@@ -183,51 +184,6 @@ const StatusDot = memo(function StatusDot({
         <span className="text-[10px] text-muted-foreground">+{count - 5}</span>
       )}
     </div>
-  );
-});
-
-const ProgressRing = memo(function ProgressRing({
-  percentage,
-  size = 60,
-  strokeWidth = 5,
-}: {
-  percentage: number;
-  size?: number;
-  strokeWidth?: number;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const offset = circumference - (percentage / 100) * circumference;
-
-  const getColor = () => {
-    if (percentage >= 85) return 'stroke-success';
-    if (percentage >= 75) return 'stroke-warning';
-    return 'stroke-destructive';
-  };
-
-  return (
-    <svg width={size} height={size} className="progress-ring">
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={strokeWidth}
-        className="text-muted/30"
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        strokeWidth={strokeWidth}
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        strokeLinecap="round"
-        className={getColor()}
-      />
-    </svg>
   );
 });
 

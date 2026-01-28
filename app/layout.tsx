@@ -10,7 +10,6 @@ const geistSans = Geist({
   subsets: ["latin"],
   display: "swap",
 });
-
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
@@ -22,21 +21,19 @@ export const metadata: Metadata = {
     default: 'UTop',
     template: '%s | UTop',
   },
-  description: 'A modern, student-friendly alternative to VIT\'s VTOP portal. Track attendance, view grades, check timetable, and more.',
+  description: 'A modern, student-friendly alternative to VTOP portal. Track attendance, view grades, check timetable, and more.',
   keywords: ['VTOP', 'VIT', 'attendance', 'grades', 'timetable', 'student portal'],
-  authors: [{ name: 'UTop' }],
-  creator: 'UTop',
   openGraph: {
     type: 'website',
     locale: 'en_US',
     siteName: 'UTop',
-    title: 'UTop - A Better VTOP',
-    description: 'A modern, student-friendly alternative to VIT\'s VTOP portal.',
+    title: 'UTop',
+    description: 'A modern, student-friendly alternative to VTOP portal.',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'UTop - A Better VTOP',
-    description: 'A modern, student-friendly alternative to VIT\'s VTOP portal.',
+    title: 'UTop',
+    description: 'A modern, student-friendly alternative to VTOP portal.',
   },
   robots: {
     index: false,
